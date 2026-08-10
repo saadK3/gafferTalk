@@ -37,8 +37,38 @@ planned and tracked through GitHub Issues and milestones.
 - Database: PostgreSQL
 - AI: tool-calling model for intent extraction and explanation
 
-Detailed development and self-hosting instructions will be added as the first
-vertical slice is implemented.
+## Local development
+
+Supported runtimes:
+
+- Node.js 24
+- pnpm 11.16
+- Python 3.12
+
+Install dependencies:
+
+```bash
+pnpm install
+python3 -m pip install -e './apps/api[dev]'
+```
+
+Run the applications in separate terminals:
+
+```bash
+make dev-web
+make dev-api
+```
+
+The web application runs at `http://localhost:3000`; the API runs at
+`http://localhost:8000`, with a health endpoint at `/health`.
+
+Copy `.env.example` to `.env` for local configuration. Never commit `.env`.
+
+Run the local quality checks with:
+
+```bash
+make check
+```
 
 ## Contributing
 
