@@ -1,0 +1,40 @@
+name: Feature
+description: Propose a user-visible capability or improvement
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What should a user be able to accomplish?
+      placeholder: As an FPL manager, I can...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this needed, and what constraints matter?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Provide observable, testable completion criteria.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: Out of scope
+      description: What should this issue deliberately not include?
+  - type: textarea
+    id: testing
+    attributes:
+      label: Verification notes
+      description: Relevant automated, manual, data-quality, or legality tests.

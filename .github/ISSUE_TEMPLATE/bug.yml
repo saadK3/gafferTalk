@@ -1,0 +1,45 @@
+name: Bug
+description: Report incorrect product or recommendation behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What happened? Include the prompt and recommendation when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include steps, Team ID only if safe/public, Gameweek, and data timestamps.
+    validations:
+      required: true
+  - type: dropdown
+    id: failure
+    attributes:
+      label: Failure category
+      options:
+        - Illegal transfer
+        - Incorrect budget or price
+        - Wrong or hallucinated player
+        - Stale or missing data
+        - Projection or ranking problem
+        - Tool or system failure
+        - User interface problem
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Logs, screenshots, links, or other useful context. Remove secrets.
