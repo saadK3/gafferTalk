@@ -50,16 +50,30 @@ Outcome:
 - Defined missing-state provenance and fallback behavior
 - Added sanitized contract fixtures and validation tests
 
-### M1 — Core vertical slice — target August 22
+### M1a — Team ID data foundation — complete
 
-Build before the GW1 deadline where possible, then validate the successful
-2026/27 picks contract immediately after the deadline.
+Completed through issues #3, #4 and #5 in PR #20.
+
+Outcomes:
+
+- Canonical FPL domain models with explicit availability and provenance
+- Validated global player, team, fixture and rules client
+- Manager and latest finalized-squad loading by Team ID
+- Terminal and API interfaces for testing the public Team ID flow
+- Typed upstream errors, bounded retries, caching and request coalescing
+
+The implemented loader correctly returns `NOT_YET_PUBLISHED` when a valid Team
+ID has no public finalized squad yet. Issue #16 remains the required live
+contract revalidation immediately after the GW1 deadline.
+
+### M1b — Core recommendation vertical slice — target August 22
+
+Build the remaining core loop before the GW1 deadline where possible, then
+validate it against the successful 2026/27 picks contract immediately after the
+deadline.
 
 Required outcomes:
 
-- Canonical FPL domain models
-- Validated global player, team, fixture and rules client
-- Manager and finalized-squad loading by Team ID
 - Snapshot freshness and provenance in the UI
 - Current bank/free-transfer/recent-change confirmation
 - Deterministic transfer-legality rules
@@ -120,10 +134,10 @@ Gameweek 2 deadline on August 28.
 ## Critical implementation order
 
 ```text
-#3 domain models
-  -> #4 global data client
-  -> #5 manager/squad loading
-  -> #6 squad UI and #15 current-state confirmation
+#3 domain models [complete]
+  -> #4 global data client [complete]
+  -> #5 manager/squad loading [complete]
+  -> #6 squad UI and #15 current-state confirmation [next]
   -> #7 legality rules + #12 scenario suite
   -> #8 replacement search
   -> #9 tool contracts
