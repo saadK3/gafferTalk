@@ -1,0 +1,33 @@
+{
+  "fixtures": [
+    {
+      "id": 9001,
+      "code": 99001,
+      "team_h": 101,
+      "team_a": 102,
+      "event": 1,
+      "finished": false,
+      "minutes": 0,
+      "provisional_start_time": false,
+      "kickoff_time": "2026-08-21T19:00:00Z",
+      "event_name": "Gameweek 1",
+      "is_home": true,
+      "difficulty": 2
+    }
+  ],
+  "history": [],
+  "history_past": [
+    {
+      "season_name": "2025/26",
+      "element_code": 999001,
+      "start_cost": 70,
+      "end_cost": 75,
+      "total_points": 150,
+      "minutes": 2500,
+      "goals_scored": 10,
+      "assists": 8,
+      "expected_goals": "8.50",
+      "expected_assists": "6.25"
+    }
+  ]
+}
