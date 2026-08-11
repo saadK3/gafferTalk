@@ -29,6 +29,21 @@ The pre-season onboarding promise `Team ID -> current squad` is not achievable
 from public Team ID endpoints alone. Before Gameweek 1, users must enter/import
 their squad or wait until the first deadline-finalized picks become public.
 
+### Why some third-party sites appear to show a pre-season squad
+
+LiveFPL was inspected on 2026-08-12 as a comparison. Its public manager endpoint
+still identified the prior season's final Gameweek. Its planner snapshot endpoint
+returned 15 players for a valid manager ID, but the same response explicitly
+reported `preseason: true` and `source: "autopick"`. The displayed players were
+therefore a generated planning fallback, not the manager's unpublished 2026/27
+FPL selection.
+
+Other products may similarly display a previous deadline snapshot, ask the user
+to build/import a squad, generate an assumed squad, or use an authenticated
+browser/session mechanism. The presence of 15 players in a UI is not evidence
+that Team ID exposes the live private squad. GafferTalk must label generated and
+snapshot squads honestly and must not present either as observed current state.
+
 ## Source status and support level
 
 These are first-party endpoints in the sense that they are served from the
