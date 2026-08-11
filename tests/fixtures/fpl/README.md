@@ -9,4 +9,3 @@ have been replaced. The files are not complete API responses.
 `picks-unavailable.json` is the observed pre-deadline response. A successful
 2026/27 picks fixture must be added only after the first deadline and after all
 manager information is removed.
-
