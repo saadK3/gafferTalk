@@ -1,0 +1,13 @@
+{
+  "name": "gaffertalk",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.16.0",
+  "engines": { "node": ">=24 <27" },
+  "scripts": {
+    "dev:web": "pnpm --filter @gaffertalk/web dev",
+    "build:web": "pnpm --filter @gaffertalk/web build",
+    "lint:web": "pnpm --filter @gaffertalk/web lint",
+    "typecheck:web": "pnpm --filter @gaffertalk/web typecheck"
+  }
+}
