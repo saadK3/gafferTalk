@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,9 @@ class Settings(BaseSettings):
     app_name: str = "GafferTalk API"
     environment: str = "development"
     cors_origins: str = "http://localhost:3000"
+    fpl_base_url: str = "https://fantasy.premierleague.com/api/"
+    fpl_timeout_seconds: float = Field(default=8.0, gt=0, le=30)
+    fpl_max_attempts: int = Field(default=3, ge=1, le=5)
 
     @property
     def allowed_origins(self) -> list[str]:
