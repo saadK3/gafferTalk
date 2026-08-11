@@ -82,6 +82,8 @@ class GameRules(DomainModel):
     initial_budget: Money
     currency_multiplier: int = Field(gt=0)
     maximum_extra_free_transfers: int = Field(ge=0)
+    squad_size_by_position: dict[Position, int]
+    minimum_starting_by_position: dict[Position, int]
 
 
 class FplCatalogue(DomainModel):
