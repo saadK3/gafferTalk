@@ -164,4 +164,3 @@ Before private beta, the product owner should:
 - Review launch copy so finalized snapshots are not described as live squads
 
 No tester should share an FPL password or session cookie.
-
