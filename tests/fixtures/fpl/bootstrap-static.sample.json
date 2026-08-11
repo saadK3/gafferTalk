@@ -1,0 +1,50 @@
+{
+  "events": [
+    {
+      "id": 1,
+      "name": "Gameweek 1",
+      "deadline_time": "2026-08-21T17:30:00Z",
+      "finished": false,
+      "data_checked": false,
+      "is_previous": false,
+      "is_current": false,
+      "is_next": true
+    }
+  ],
+  "game_settings": {
+    "element_sell_at_purchase_price": false,
+    "squad_squadplay": 11,
+    "squad_squadsize": 15,
+    "squad_team_limit": 3,
+    "squad_total_spend": 1000,
+    "transfers_cap": 20,
+    "transfers_sell_on_fee": 0.5,
+    "max_extra_free_transfers": 4,
+    "ui_currency_multiplier": 10
+  },
+  "teams": [
+    {
+      "id": 101,
+      "name": "Example FC",
+      "short_name": "EXA",
+      "strength": null,
+      "strength_attack_home": 0,
+      "strength_defence_home": 0
+    }
+  ],
+  "elements": [
+    {
+      "id": 1001,
+      "web_name": "Example Player",
+      "team": 101,
+      "element_type": 3,
+      "now_cost": 75,
+      "status": "a",
+      "chance_of_playing_next_round": null,
+      "news": "",
+      "selected_by_percent": "10.0",
+      "expected_goals": "0.00",
+      "expected_assists": "0.00"
+    }
+  ]
+}

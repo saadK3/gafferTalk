@@ -1,0 +1,20 @@
+{
+  "id": 12345,
+  "current_event": null,
+  "started_event": 1,
+  "entered_events": [],
+  "last_deadline_bank": null,
+  "last_deadline_value": null,
+  "last_deadline_total_transfers": 0,
+  "summary_event_points": null,
+  "summary_event_rank": null,
+  "summary_overall_points": null,
+  "summary_overall_rank": null,
+  "years_active": 1,
+  "leagues": {
+    "classic": [],
+    "h2h": [],
+    "cup": [],
+    "cup_matches": []
+  }
+}
