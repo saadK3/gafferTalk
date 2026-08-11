@@ -27,8 +27,11 @@ captain recommendations.
 
 ## Status
 
-GafferTalk is in initial development for the 2026/27 FPL season. Work is
-planned and tracked through GitHub Issues and milestones.
+GafferTalk is in initial development for the 2026/27 FPL season. The public MVP
+is targeted for August 25–26, after finalized Gameweek 1 squads become publicly
+available and before the Gameweek 2 deadline. See the
+[MVP roadmap](docs/product/roadmap.md) and GitHub milestones for current scope
+and progress.
 
 ## Planned architecture
 
