@@ -1,10 +1,14 @@
-from fastapi.testclient import TestClient
+import httpx
+import pytest
 
 from gaffertalk_api.main import app
 
 
-def test_health_returns_service_status() -> None:
-    response = TestClient(app).get("/health")
+@pytest.mark.anyio
+async def test_health_returns_service_status() -> None:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {

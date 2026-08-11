@@ -1,5 +1,6 @@
 {
   "id": 12345,
+  "name": "Example Entry",
   "current_event": null,
   "started_event": 1,
   "entered_events": [],
