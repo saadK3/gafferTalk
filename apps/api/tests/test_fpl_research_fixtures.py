@@ -4,7 +4,6 @@ from typing import Any
 
 FIXTURE_DIRECTORY = Path(__file__).parents[3] / "tests" / "fixtures" / "fpl"
 FORBIDDEN_MANAGER_FIELDS = {
-    "name",
     "player_first_name",
     "player_last_name",
     "player_region_name",
@@ -28,6 +27,7 @@ def test_entry_fixture_excludes_manager_identity() -> None:
     entry = load_fixture(FIXTURE_DIRECTORY / "entry.sample.json")
 
     assert FORBIDDEN_MANAGER_FIELDS.isdisjoint(entry)
+    assert entry["name"] == "Example Entry"
 
 
 def test_money_and_rules_use_observed_integer_units() -> None:

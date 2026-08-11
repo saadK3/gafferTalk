@@ -65,6 +65,23 @@ make dev-api
 The web application runs at `http://localhost:3000`; the API runs at
 `http://localhost:8000`, with a health endpoint at `/health`.
 
+Look up a real public FPL Team ID from the terminal:
+
+```bash
+make lookup-team TEAM_ID=1234567
+python -m gaffertalk_api.cli team 1234567 --json
+```
+
+The same canonical response is available from the API:
+
+```bash
+curl http://localhost:8000/v1/entries/1234567/squad
+```
+
+Before the first deadline, a valid entry is returned with an explicit
+`not_yet_published` squad status. See the
+[team lookup architecture](docs/architecture/team-lookup.md).
+
 Copy `.env.example` to `.env` for local configuration. Never commit `.env`.
 
 Run the local quality checks with:

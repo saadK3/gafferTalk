@@ -1,10 +1,21 @@
-from typing import Literal
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Annotated, Literal
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Path, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from gaffertalk_api.config import get_settings
+from gaffertalk_api.domain.errors import (
+    InvalidTeamIdError,
+    InvalidUpstreamFplResponseError,
+    UpstreamFplTimeoutError,
+    UpstreamFplUnavailableError,
+)
+from gaffertalk_api.domain.models import SquadLookupResult
+from gaffertalk_api.integrations.fpl.client import FplClient
+from gaffertalk_api.services.team_loader import TeamLoader
 
 
 class HealthResponse(BaseModel):
@@ -15,11 +26,27 @@ class HealthResponse(BaseModel):
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    client = FplClient(
+        base_url=settings.fpl_base_url,
+        timeout_seconds=settings.fpl_timeout_seconds,
+        max_attempts=settings.fpl_max_attempts,
+    )
+    application.state.team_loader = TeamLoader(client)
+    try:
+        yield
+    finally:
+        await client.aclose()
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     docs_url="/docs" if settings.environment != "production" else None,
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -40,3 +67,42 @@ async def health() -> HealthResponse:
         service="gaffertalk-api",
         environment=settings.environment,
     )
+
+
+def get_team_loader(request: Request) -> TeamLoader:
+    return request.app.state.team_loader
+
+
+@app.get(
+    "/v1/entries/{team_id}/squad",
+    response_model=SquadLookupResult,
+    tags=["FPL entries"],
+)
+async def get_entry_squad(
+    team_id: Annotated[int, Path(gt=0, description="Public FPL Team ID")],
+    loader: Annotated[TeamLoader, Depends(get_team_loader)],
+) -> SquadLookupResult:
+    """Load the latest publicly finalized squad for an FPL Team ID."""
+
+    try:
+        return await loader.load(team_id)
+    except InvalidTeamIdError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "invalid_team_id", "message": str(error)},
+        ) from error
+    except UpstreamFplTimeoutError as error:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"code": "upstream_timeout", "message": str(error)},
+        ) from error
+    except InvalidUpstreamFplResponseError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "invalid_upstream_response", "message": str(error)},
+        ) from error
+    except UpstreamFplUnavailableError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "upstream_unavailable", "message": str(error)},
+        ) from error
