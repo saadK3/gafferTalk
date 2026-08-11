@@ -1,0 +1,64 @@
+[
+  {
+    "name": "exact_budget_same_position_transfer",
+    "transfers": [[1003, 2001]],
+    "state": {"bank": 10, "free_transfers": 1, "selling_prices": {"1003": 50}},
+    "expected_status": "legal",
+    "expected_remaining_bank": 0,
+    "expected_paid_transfers": 0,
+    "expected_points_hit": 0
+  },
+  {
+    "name": "insufficient_funds",
+    "transfers": [[1003, 2001]],
+    "state": {"bank": 9, "free_transfers": 1, "selling_prices": {"1003": 50}},
+    "expected_status": "illegal",
+    "expected_codes": ["insufficient_funds"]
+  },
+  {
+    "name": "club_limit_violation",
+    "transfers": [[1003, 2004]],
+    "state": {"bank": 20, "free_transfers": 1, "selling_prices": {"1003": 50}},
+    "expected_status": "illegal",
+    "expected_codes": ["club_limit"]
+  },
+  {
+    "name": "position_composition_violation",
+    "transfers": [[1003, 2003]],
+    "state": {"bank": 20, "free_transfers": 1, "selling_prices": {"1003": 50}},
+    "expected_status": "illegal",
+    "expected_codes": ["position_composition"]
+  },
+  {
+    "name": "unknown_selling_price_is_missing_state",
+    "transfers": [[1003, 2001]],
+    "state": {"bank": 20, "free_transfers": 1, "selling_prices": {}},
+    "expected_status": "missing_state",
+    "expected_codes": ["missing_selling_price"]
+  },
+  {
+    "name": "two_transfers_with_one_free_transfer",
+    "transfers": [[1003, 2001], [1008, 2002]],
+    "state": {
+      "bank": 15,
+      "free_transfers": 1,
+      "selling_prices": {"1003": 50, "1008": 55}
+    },
+    "expected_status": "legal",
+    "expected_remaining_bank": 0,
+    "expected_paid_transfers": 1,
+    "expected_points_hit": 4
+  },
+  {
+    "name": "wildcard_is_explicitly_unsupported",
+    "transfers": [[1003, 2001]],
+    "state": {
+      "bank": 10,
+      "free_transfers": 1,
+      "selling_prices": {"1003": 50},
+      "active_chip": "wildcard"
+    },
+    "expected_status": "unsupported",
+    "expected_codes": ["unsupported_chip"]
+  }
+]

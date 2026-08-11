@@ -17,6 +17,14 @@ from gaffertalk_api.domain.models import (
     SquadPick,
     SquadSnapshot,
 )
+from gaffertalk_api.domain.transfers import (
+    ProposedTransfer,
+    TransferLegalityResult,
+    TransferLegalityStatus,
+    TransferPlanningState,
+    TransferRejection,
+    TransferRejectionCode,
+)
 
 __all__ = [
     "Club",
@@ -34,4 +42,10 @@ __all__ = [
     "SquadLookupResult",
     "SquadPick",
     "SquadSnapshot",
+    "ProposedTransfer",
+    "TransferLegalityResult",
+    "TransferLegalityStatus",
+    "TransferPlanningState",
+    "TransferRejection",
+    "TransferRejectionCode",
 ]

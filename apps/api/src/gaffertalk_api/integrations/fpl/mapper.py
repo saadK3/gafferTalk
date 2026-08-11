@@ -88,6 +88,18 @@ def map_catalogue(bootstrap: FplBootstrap, retrieved_at: datetime) -> FplCatalog
             initial_budget=Money(tenths=settings.squad_total_spend),
             currency_multiplier=settings.ui_currency_multiplier,
             maximum_extra_free_transfers=settings.max_extra_free_transfers,
+            squad_size_by_position={
+                POSITION_BY_SHORT_NAME[element_type.singular_name_short]: element_type.squad_select
+                for element_type in bootstrap.element_types
+                if element_type.singular_name_short in POSITION_BY_SHORT_NAME
+            },
+            minimum_starting_by_position={
+                POSITION_BY_SHORT_NAME[
+                    element_type.singular_name_short
+                ]: element_type.squad_min_play
+                for element_type in bootstrap.element_types
+                if element_type.singular_name_short in POSITION_BY_SHORT_NAME
+            },
         ),
         retrieved_at=retrieved_at,
     )
