@@ -8,7 +8,7 @@ The Team ID lookup slice converts unversioned public FPL JSON into validated,
 immutable GafferTalk domain data.
 
 ```text
-CLI or GET /v1/entries/{team_id}/squad
+CLI, GET /v1/entries/{team_id}/squad, or the `/team` web flow
   -> TeamLoader
   -> FplClient
   -> public FPL JSON endpoints
@@ -39,6 +39,11 @@ Player summaries use a one-hour cache. Entry and picks calls use short caches.
 The cache coalesces concurrent requests for the same key.
 
 No Redis or database is required for this slice.
+
+The web confirmation flow also uses `GET /v1/players?position={position}&query={query}`
+to search canonical current players when a manager records a transfer made
+after the deadline. Search requires an explicit position and at least two query
+characters; it is not a recommendation endpoint.
 
 ## Availability behavior
 
@@ -72,9 +77,11 @@ the Team ID into an invalid ID.
 The application does not log domain objects or upstream entry payloads, which
 prevents manager identity from being copied into ordinary request logs.
 
+See [current-team confirmation](../product/current-team-confirmation.md) for the
+observed-versus-user-supplied state boundary after lookup.
+
 ## Provisional post-deadline contract
 
 The successful 2026/27 picks response cannot be observed until the GW1 deadline.
 The adapter is implemented against the established response shape and synthetic
 sanitized tests. Issue #16 must revalidate it immediately after the deadline.
-

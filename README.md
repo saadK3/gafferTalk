@@ -78,6 +78,9 @@ The same canonical response is available from the API:
 curl http://localhost:8000/v1/entries/1234567/squad
 ```
 
+With both applications running, open `http://localhost:3000/team` to load and
+confirm a current team in the web interface.
+
 Before the first deadline, a valid entry is returned with an explicit
 `not_yet_published` squad status. See the
 [team lookup architecture](docs/architecture/team-lookup.md).
