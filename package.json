@@ -8,6 +8,7 @@
     "dev:web": "pnpm --filter @gaffertalk/web dev",
     "build:web": "pnpm --filter @gaffertalk/web build",
     "lint:web": "pnpm --filter @gaffertalk/web lint",
-    "typecheck:web": "pnpm --filter @gaffertalk/web typecheck"
+    "typecheck:web": "pnpm --filter @gaffertalk/web typecheck",
+    "test:web": "pnpm --filter @gaffertalk/web test"
   }
 }

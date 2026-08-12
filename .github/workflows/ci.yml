@@ -35,6 +35,8 @@ jobs:
         run: pnpm lint:web
       - name: Type-check
         run: pnpm typecheck:web
+      - name: Test
+        run: pnpm test:web
       - name: Build
         run: pnpm build:web
 

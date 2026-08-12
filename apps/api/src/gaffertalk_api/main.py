@@ -1,8 +1,9 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Path, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -13,8 +14,9 @@ from gaffertalk_api.domain.errors import (
     UpstreamFplTimeoutError,
     UpstreamFplUnavailableError,
 )
-from gaffertalk_api.domain.models import SquadLookupResult
+from gaffertalk_api.domain.models import Player, Position, SquadLookupResult
 from gaffertalk_api.integrations.fpl.client import FplClient
+from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
 from gaffertalk_api.services.team_loader import TeamLoader
 
 
@@ -22,6 +24,11 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     service: str
     environment: str
+
+
+class PlayerSearchResponse(BaseModel):
+    players: tuple[Player, ...]
+    retrieved_at: datetime
 
 
 settings = get_settings()
@@ -35,6 +42,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         max_attempts=settings.fpl_max_attempts,
     )
     application.state.team_loader = TeamLoader(client)
+    application.state.player_catalogue = PlayerCatalogueLoader(client)
     try:
         yield
     finally:
@@ -73,6 +81,10 @@ def get_team_loader(request: Request) -> TeamLoader:
     return request.app.state.team_loader
 
 
+def get_player_catalogue(request: Request) -> PlayerCatalogueLoader:
+    return request.app.state.player_catalogue
+
+
 @app.get(
     "/v1/entries/{team_id}/squad",
     response_model=SquadLookupResult,
@@ -91,6 +103,34 @@ async def get_entry_squad(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "invalid_team_id", "message": str(error)},
         ) from error
+    except UpstreamFplTimeoutError as error:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"code": "upstream_timeout", "message": str(error)},
+        ) from error
+    except InvalidUpstreamFplResponseError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "invalid_upstream_response", "message": str(error)},
+        ) from error
+    except UpstreamFplUnavailableError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "upstream_unavailable", "message": str(error)},
+        ) from error
+
+
+@app.get("/v1/players", response_model=PlayerSearchResponse, tags=["FPL players"])
+async def search_players(
+    position: Annotated[Position, Query(description="Required FPL position")],
+    query: Annotated[str, Query(min_length=2, max_length=40)],
+    loader: Annotated[PlayerCatalogueLoader, Depends(get_player_catalogue)],
+) -> PlayerSearchResponse:
+    """Search current public FPL players for a recorded squad change."""
+
+    try:
+        players = await loader.search(position=position, query=query)
+        return PlayerSearchResponse(players=players, retrieved_at=datetime.now(UTC))
     except UpstreamFplTimeoutError as error:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
