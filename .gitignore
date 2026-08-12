@@ -12,6 +12,8 @@
 node_modules/
 .pnpm-store/
 .next/
+.open-next/
+.wrangler/
 out/
 coverage/
 *.tsbuildinfo
