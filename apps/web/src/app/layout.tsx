@@ -3,8 +3,27 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GafferTalk — Talk to your FPL team",
-  description: "Legal, data-driven Fantasy Premier League recommendations.",
+  metadataBase: new URL("https://gaffertalk.com"),
+  title: "GafferTalk — Make the call",
+  description:
+    "Clear, legal Fantasy Premier League transfer options grounded in your squad.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "GafferTalk — Your team. Your call.",
+    description:
+      "GafferTalk does the homework—checking the data, budget and FPL rules before laying out your options.",
+    url: "/",
+    siteName: "GafferTalk",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "GafferTalk transfer check" }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "GafferTalk — Your team. Your call.",
+    description: "GafferTalk does the homework. You make the call.",
+    images: ["/og.png"],
+  },
+  robots: { index: true, follow: true },
 };
 
 type RootLayoutProps = Readonly<{ children: ReactNode }>;
