@@ -1,4 +1,4 @@
-.PHONY: install dev-api dev-web lookup-team lint test typecheck check
+.PHONY: install dev-api dev-web lookup-team recommend-one lint test typecheck check
 
 PYTHON ?= python3
 PNPM ?= pnpm
@@ -16,6 +16,9 @@ dev-web:
 lookup-team:
 	@test -n "$(TEAM_ID)" || (echo "Usage: make lookup-team TEAM_ID=1234567" && exit 2)
 	$(PYTHON) -m gaffertalk_api.cli team $(TEAM_ID)
+
+recommend-one:
+	$(PYTHON) -m gaffertalk_api.cli recommend-one --out "$(or $(OUT),Yates)"
 
 lint:
 	$(PNPM) lint:web

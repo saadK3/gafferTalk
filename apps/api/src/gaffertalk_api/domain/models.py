@@ -61,6 +61,12 @@ class Player(DomainModel):
     status: str = Field(min_length=1)
     chance_of_playing_next_round: int | None = Field(default=None, ge=0, le=100)
     news: str = ""
+    total_points: int = 0
+    minutes: int = Field(default=0, ge=0)
+    starts: int = Field(default=0, ge=0)
+    expected_goals: float = Field(default=0, ge=0)
+    expected_assists: float = Field(default=0, ge=0)
+    selected_by_percent: float = Field(default=0, ge=0, le=100)
 
 
 class Fixture(DomainModel):

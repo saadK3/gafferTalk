@@ -1,0 +1,24 @@
+{
+  "name": "GafferTalk Synthetic XI",
+  "bank_tenths": 10,
+  "free_transfers": 1,
+  "captain": "Haaland",
+  "vice_captain": "B.Fernandes",
+  "players": [
+    {"web_name": "Palmer", "club": "IPS", "position": "GKP"},
+    {"web_name": "Diop", "club": "IPS", "position": "DEF"},
+    {"web_name": "van Ewijk", "club": "COV", "position": "DEF"},
+    {"web_name": "Thomas", "club": "COV", "position": "DEF"},
+    {"web_name": "Davis", "club": "IPS", "position": "DEF"},
+    {"web_name": "B.Fernandes", "club": "MUN", "position": "MID"},
+    {"web_name": "Szoboszlai", "club": "LIV", "position": "MID"},
+    {"web_name": "Semenyo", "club": "MCI", "position": "MID"},
+    {"web_name": "Ndiaye", "club": "EVE", "position": "MID"},
+    {"web_name": "Yates", "club": "NFO", "position": "MID"},
+    {"web_name": "Haaland", "club": "MCI", "position": "FWD"},
+    {"web_name": "Steele", "club": "BHA", "position": "GKP"},
+    {"web_name": "Spence", "club": "TOT", "position": "DEF"},
+    {"web_name": "João Pedro", "club": "CHE", "position": "FWD"},
+    {"web_name": "Kusi-Asare", "club": "FUL", "position": "FWD"}
+  ]
+}
