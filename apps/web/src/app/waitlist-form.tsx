@@ -18,6 +18,19 @@ export function WaitlistForm() {
     process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
     (process.env.NODE_ENV === "production" ? "0x4AAAAAAEORSMZ-bDSldmos" : undefined);
 
+  if (state === "success") {
+    return (
+      <div className="signup-confirmation" role="status" aria-live="polite">
+        <span className="signup-confirmation-check" aria-hidden="true">✓</span>
+        <div>
+          <span className="signup-confirmation-label">Signup complete</span>
+          <strong>You’re on the team sheet.</strong>
+          <p>{message} We’re excited to have you with us.</p>
+        </div>
+      </div>
+    );
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState("submitting");
@@ -50,7 +63,7 @@ export function WaitlistForm() {
     }
 
     setState("success");
-    setMessage(payload.message ?? "You’re on the list.");
+    setMessage(payload.message ?? "You’re on the early-access list.");
     form.reset();
   }
 
