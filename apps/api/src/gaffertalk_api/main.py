@@ -1,8 +1,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path as FilePath
 from typing import Annotated, Literal
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -15,8 +17,19 @@ from gaffertalk_api.domain.errors import (
     UpstreamFplUnavailableError,
 )
 from gaffertalk_api.domain.models import Player, Position, SquadLookupResult
+from gaffertalk_api.domain.recommendation_requests import (
+    ConversationalRecommendationRequest,
+    ConversationalRecommendationResponse,
+    CurrentSquadInput,
+    DemoSquadResponse,
+    TransferRecommendationRequest,
+)
+from gaffertalk_api.domain.recommendations import RecommendationResult
 from gaffertalk_api.integrations.fpl.client import FplClient
+from gaffertalk_api.integrations.llm.groq import GroqConversationClient
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
+from gaffertalk_api.services.recommendation_loader import RecommendationLoader
+from gaffertalk_api.services.synthetic_squad import load_synthetic_squad
 from gaffertalk_api.services.team_loader import TeamLoader
 
 
@@ -32,6 +45,9 @@ class PlayerSearchResponse(BaseModel):
 
 
 settings = get_settings()
+SYNTHETIC_SQUAD_PATH = (
+    FilePath(__file__).parents[4] / "tests/fixtures/recommendations/synthetic-squad.json"
+)
 
 
 @asynccontextmanager
@@ -43,9 +59,22 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     )
     application.state.team_loader = TeamLoader(client)
     application.state.player_catalogue = PlayerCatalogueLoader(client)
+    application.state.recommendation_loader = RecommendationLoader(client)
+    application.state.groq_client = (
+        GroqConversationClient(
+            api_key=settings.groq_api_key,
+            model=settings.groq_model,
+            base_url=settings.groq_base_url,
+            timeout_seconds=settings.groq_timeout_seconds,
+        )
+        if settings.groq_api_key
+        else None
+    )
     try:
         yield
     finally:
+        if application.state.groq_client is not None:
+            await application.state.groq_client.aclose()
         await client.aclose()
 
 
@@ -61,7 +90,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -83,6 +112,10 @@ def get_team_loader(request: Request) -> TeamLoader:
 
 def get_player_catalogue(request: Request) -> PlayerCatalogueLoader:
     return request.app.state.player_catalogue
+
+
+def get_recommendation_loader(request: Request) -> RecommendationLoader:
+    return request.app.state.recommendation_loader
 
 
 @app.get(
@@ -146,3 +179,99 @@ async def search_players(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "upstream_unavailable", "message": str(error)},
         ) from error
+
+
+@app.post(
+    "/v1/recommendations/transfers",
+    response_model=RecommendationResult,
+    tags=["recommendations"],
+)
+async def recommend_transfer(
+    request: TransferRecommendationRequest,
+    loader: Annotated[RecommendationLoader, Depends(get_recommendation_loader)],
+) -> RecommendationResult:
+    """Rank legal one-player replacements using live public FPL data."""
+
+    try:
+        return await loader.recommend(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_recommendation_state", "message": str(error)},
+        ) from error
+
+
+@app.post(
+    "/v1/recommendations/conversation",
+    response_model=ConversationalRecommendationResponse,
+    tags=["recommendations"],
+)
+async def conversational_recommendation(
+    request: ConversationalRecommendationRequest,
+    http_request: Request,
+    loader: Annotated[RecommendationLoader, Depends(get_recommendation_loader)],
+) -> ConversationalRecommendationResponse:
+    """Interpret and explain a deterministic recommendation through Groq."""
+
+    groq: GroqConversationClient | None = http_request.app.state.groq_client
+    if groq is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "conversation_unconfigured",
+                "message": "Conversational recommendations need a configured Groq API key.",
+            },
+        )
+    recommendation_request = TransferRecommendationRequest(
+        squad=request.squad,
+        outgoing_player_id=request.outgoing_player_id,
+        outgoing_selling_price_tenths=request.outgoing_selling_price_tenths,
+    )
+    try:
+        catalogue = await http_request.app.state.player_catalogue.load()
+        squad_players = tuple(
+            catalogue.players[player_id] for player_id in request.squad.player_ids
+        )
+        intent = await groq.interpret(request.question, squad_players, request.outgoing_player_id)
+        result = await loader.recommend(recommendation_request)
+        assistant_message = await groq.explain(request.question, result)
+        return ConversationalRecommendationResponse(
+            assistant_message=assistant_message,
+            interpreted_outgoing_player_id=intent.outgoing_player_id,
+            result=result,
+            provider="groq",
+            model=groq.model,
+        )
+    except (ValueError, KeyError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_conversation", "message": str(error)},
+        ) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "conversation_unavailable", "message": "Groq is unavailable."},
+        ) from error
+
+
+@app.get("/v1/demo/squad", response_model=DemoSquadResponse, tags=["development"])
+async def get_demo_squad(
+    loader: Annotated[PlayerCatalogueLoader, Depends(get_player_catalogue)],
+) -> DemoSquadResponse:
+    """Resolve the versioned synthetic squad against today's live FPL catalogue."""
+
+    if settings.environment == "production":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    catalogue = await loader.load()
+    definition, snapshot, state = load_synthetic_squad(SYNTHETIC_SQUAD_PATH, catalogue)
+    assert state.bank is not None and state.free_transfers is not None
+    return DemoSquadResponse(
+        squad=CurrentSquadInput(
+            name=definition.name,
+            player_ids=tuple(pick.player.id for pick in snapshot.picks),
+            bank_tenths=state.bank.tenths,
+            free_transfers=state.free_transfers,
+        ),
+        players=tuple(pick.player for pick in snapshot.picks),
+    )

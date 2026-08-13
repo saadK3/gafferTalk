@@ -77,6 +77,26 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl()}${path}`, {
+      method: "POST",
+      signal,
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new CurrentTeamApiError("GafferTalk could not reach the recommendation service.", 0, "network_error");
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { code?: string; message?: string } } | null;
+    throw new CurrentTeamApiError(payload?.detail?.message ?? "The recommendation could not be completed.", response.status, payload?.detail?.code ?? "unknown_error");
+  }
+  return response.json() as Promise<T>;
+}
+
 export function loadSquad(teamId: string, signal?: AbortSignal): Promise<SquadLookupResult> {
   return request<SquadLookupResult>(`/v1/entries/${encodeURIComponent(teamId)}/squad`, signal);
 }
@@ -85,4 +105,44 @@ export async function searchPlayers(position: Position, query: string, signal?: 
   const params = new URLSearchParams({ position, query });
   const result = await request<{ players: ApiPlayer[] }>(`/v1/players?${params}`, signal);
   return result.players;
+}
+
+export type Recommendation = {
+  rank: number;
+  incoming: ApiPlayer;
+  score: number;
+  score_breakdown: { historical_output: number; upcoming_fixtures: number; value: number };
+  average_fixture_difficulty: number | null;
+  remaining_bank: ApiMoney;
+  reasons: string[];
+  trade_off: string;
+};
+
+export type RecommendationResult = {
+  squad_name: string;
+  outgoing: ApiPlayer;
+  recommendations: Recommendation[];
+  assumptions: string[];
+};
+
+export type CurrentSquadRequest = {
+  name: string;
+  player_ids: number[];
+  squad_positions?: Record<number, number>;
+  bank_tenths: number;
+  free_transfers: number;
+};
+
+export type DemoSquad = { squad: CurrentSquadRequest; players: ApiPlayer[] };
+
+export function loadDemoSquad(signal?: AbortSignal): Promise<DemoSquad> {
+  return request<DemoSquad>("/v1/demo/squad", signal);
+}
+
+export function recommendTransfer(input: { squad: CurrentSquadRequest; outgoing_player_id: number; outgoing_selling_price_tenths: number }, signal?: AbortSignal): Promise<RecommendationResult> {
+  return post<RecommendationResult>("/v1/recommendations/transfers", input, signal);
+}
+
+export function askGafferTalk(input: { squad: CurrentSquadRequest; outgoing_player_id: number; outgoing_selling_price_tenths: number; question: string }, signal?: AbortSignal): Promise<{ assistant_message: string; result: RecommendationResult; provider: string; model: string }> {
+  return post("/v1/recommendations/conversation", input, signal);
 }

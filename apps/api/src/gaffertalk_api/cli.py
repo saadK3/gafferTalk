@@ -123,7 +123,7 @@ def recommendation_output(result: RecommendationResult) -> str:
     lines = [
         "GafferTalk one-player recommendations",
         "",
-        f"Synthetic squad: {result.synthetic_squad_name}",
+        f"Squad: {result.squad_name}",
         f"Transfer out: {result.outgoing.web_name} "
         f"({result.outgoing.position.value}, {result.outgoing.club.short_name}, "
         f"{format_money(result.outgoing.current_price)})",

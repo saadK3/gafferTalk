@@ -2,9 +2,11 @@
 
 import type { CSSProperties, FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   CurrentTeamApiError,
+  loadDemoSquad,
   loadSquad,
   searchPlayers,
   type ApiPlayer,
@@ -112,6 +114,26 @@ function PlayerRow({ player, onChange, benchNumber, change, marker }: { player: 
   );
 }
 
+function demoLoadedTeam(players: ApiPlayer[]): LoadedTeam {
+  const now = new Date().toISOString();
+  const picks = players.map((player, index) => ({
+    player,
+    squad_position: index + 1,
+    multiplier: player.web_name === "Haaland" ? 2 : index < 11 ? 1 : 0,
+    is_captain: player.web_name === "Haaland",
+    is_vice_captain: player.web_name === "B.Fernandes",
+  }));
+  const result: SquadLookupResult = {
+    entry: { id: 1, team_name: "GafferTalk Synthetic XI", manager_first_name: "Demo", manager_last_name: "Manager" },
+    availability: { status: "available", reason: "Local development demo squad.", next_deadline: null },
+    snapshot: { gameweek: { id: 1, name: "Gameweek 1 demo", deadline_time: now }, picks, bank: { tenths: 10 }, squad_value: { tenths: players.reduce((total, player) => total + player.current_price.tenths, 0) }, retrieved_at: now },
+    retrieved_at: now,
+  };
+  const loaded = mapLoadedTeam(result);
+  if (!loaded) throw new Error("The demo squad is incomplete.");
+  return loaded;
+}
+
 function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
   const [id, setId] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -120,6 +142,18 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const loadDemo = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const demo = await loadDemoSquad();
+      onLoaded(demoLoadedTeam(demo.players));
+    } catch (caught) {
+      setError(caught instanceof CurrentTeamApiError ? caught.message : "The demo squad could not be loaded.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!/^\d{1,10}$/.test(id) || Number(id) <= 0) { setError("Enter a valid numeric Team ID."); return; }
@@ -157,6 +191,7 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
         <p id="team-id-help">Find this number in the URL of your public FPL points page.</p>
         {error ? <p className={styles.fieldError} id="team-id-error" role="alert">{error}</p> : null}
         <button className={styles.primaryAction} type="submit" disabled={isLoading}>{isLoading ? "Loading squad…" : "Load my team"}</button>
+        {process.env.NODE_ENV !== "production" ? <div className={styles.demoEntry}><span>or test before GW1</span><button type="button" onClick={loadDemo} disabled={isLoading}>Use demo squad</button><p>Development only · live players, prices and fixtures</p></div> : null}
         <small>No FPL password needed</small>
       </form>
     </section>
@@ -164,6 +199,7 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
 }
 
 export function ConfirmTeamFlow() {
+  const router = useRouter();
   const [stage, setStage] = useState<Stage>("lookup");
   const [loadedTeam, setLoadedTeam] = useState<LoadedTeam | null>(null);
   const [changes, setChanges] = useState<Change[]>([]);
@@ -239,6 +275,25 @@ export function ConfirmTeamFlow() {
     if (!loadedTeam?.result.snapshot) return;
     const confirmedState = buildConfirmedCurrentTeam({ teamId: loadedTeam.result.entry.id, sourceGameweek: loadedTeam.result.snapshot.gameweek.id, playerIds: currentSquad.map((player) => player.id), changes: changes.map((change) => ({ outgoingPlayerId: change.outgoing.id, incomingPlayerId: change.incoming.id })), captainId, viceCaptainId, bankTenths: Math.round(parsedBank * 10), freeTransfers: Number(freeTransfers), confirmedAt: new Date().toISOString() });
     window.localStorage.setItem("gaffertalk.currentTeam.v1", JSON.stringify(confirmedState));
+    window.localStorage.setItem("gaffertalk.recommendationSquad.v1", JSON.stringify({
+      squad: {
+        name: loadedTeam.result.entry.team_name,
+        player_ids: currentSquad.map((player) => player.id),
+        squad_positions: Object.fromEntries(currentSquad.map((player, index) => [player.id, index + 1])),
+        bank_tenths: Math.round(parsedBank * 10),
+        free_transfers: Number(freeTransfers),
+      },
+      players: currentSquad.map((player) => ({
+        id: player.id,
+        web_name: player.name,
+        club: { id: player.clubId, name: player.club, short_name: player.club },
+        position: player.position,
+        current_price: { tenths: Math.round(player.price * 10) },
+        status: "a",
+        chance_of_playing_next_round: null,
+        news: "",
+      })),
+    }));
     setStage("ready");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -305,7 +360,7 @@ export function ConfirmTeamFlow() {
         <section className={styles.readyStage}>
           <span className={styles.readyTick}>✓</span><p className={styles.eyebrow}><span>Team ready</span> Trusted planning state</p><h1>You’re ready<br />to make the call.</h1><p className={styles.lede}>GafferTalk now has your current 15-player squad, <strong>£{Number(bank).toFixed(1)}m</strong> in the bank and <strong>{freeTransfers}</strong> free transfer{freeTransfers === "1" ? "" : "s"}.</p>
           <div className={styles.provenanceGrid}><article><span>From public FPL data</span><strong>{snapshot?.gameweek.name} squad snapshot</strong><p>Players, clubs, positions and deadline context.</p></article><article><span>Confirmed by you</span><strong>{changes.length} squad change{changes.length === 1 ? "" : "s"}</strong><p>Current bank, captaincy and free-transfer count.</p></article></div>
-          <div className={styles.readyActions}><button className={styles.primaryAction} type="button">Continue to GafferTalk</button><button className={styles.textButton} type="button" onClick={() => setStage("confirm")}>Edit current team</button></div>
+          <div className={styles.readyActions}><button className={styles.primaryAction} type="button" onClick={() => router.push("/recommend")}>Continue to GafferTalk</button><button className={styles.textButton} type="button" onClick={() => setStage("confirm")}>Edit current team</button></div>
           <p className={styles.prototypeNote}>Your confirmed state is saved on this device. The assistant screen comes next.</p>
         </section>
       ) : null}

@@ -93,7 +93,22 @@ curl http://localhost:8000/v1/entries/1234567/squad
 ```
 
 With both applications running, open `http://localhost:3000/team` to load and
-confirm a current team in the web interface.
+confirm a current team. The completed state continues to `/recommend`, where
+the manager can choose one outgoing player, ask a natural-language question,
+and receive ranked legal options.
+
+Groq is optional for local development. Without a key, the recommendation
+screen still uses the deterministic engine and labels the result as an engine
+preview. To test conversational interpretation and explanation, create a local
+`.env` from `.env.example` and set `GAFFERTALK_GROQ_API_KEY`. The key is read by
+the Python backend only and must never be exposed as a `NEXT_PUBLIC` variable.
+
+Recommendation endpoints:
+
+```text
+POST /v1/recommendations/transfers
+POST /v1/recommendations/conversation
+```
 
 Before the first deadline, a valid entry is returned with an explicit
 `not_yet_published` squad status. See the
