@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   CurrentTeamApiError,
+  loadDemoSquad,
   loadSquad,
   searchPlayers,
   type ApiPlayer,
@@ -113,6 +114,26 @@ function PlayerRow({ player, onChange, benchNumber, change, marker }: { player: 
   );
 }
 
+function demoLoadedTeam(players: ApiPlayer[]): LoadedTeam {
+  const now = new Date().toISOString();
+  const picks = players.map((player, index) => ({
+    player,
+    squad_position: index + 1,
+    multiplier: player.web_name === "Haaland" ? 2 : index < 11 ? 1 : 0,
+    is_captain: player.web_name === "Haaland",
+    is_vice_captain: player.web_name === "B.Fernandes",
+  }));
+  const result: SquadLookupResult = {
+    entry: { id: 1, team_name: "GafferTalk Synthetic XI", manager_first_name: "Demo", manager_last_name: "Manager" },
+    availability: { status: "available", reason: "Local development demo squad.", next_deadline: null },
+    snapshot: { gameweek: { id: 1, name: "Gameweek 1 demo", deadline_time: now }, picks, bank: { tenths: 10 }, squad_value: { tenths: players.reduce((total, player) => total + player.current_price.tenths, 0) }, retrieved_at: now },
+    retrieved_at: now,
+  };
+  const loaded = mapLoadedTeam(result);
+  if (!loaded) throw new Error("The demo squad is incomplete.");
+  return loaded;
+}
+
 function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
   const [id, setId] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -121,6 +142,18 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const loadDemo = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const demo = await loadDemoSquad();
+      onLoaded(demoLoadedTeam(demo.players));
+    } catch (caught) {
+      setError(caught instanceof CurrentTeamApiError ? caught.message : "The demo squad could not be loaded.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!/^\d{1,10}$/.test(id) || Number(id) <= 0) { setError("Enter a valid numeric Team ID."); return; }
@@ -158,6 +191,7 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
         <p id="team-id-help">Find this number in the URL of your public FPL points page.</p>
         {error ? <p className={styles.fieldError} id="team-id-error" role="alert">{error}</p> : null}
         <button className={styles.primaryAction} type="submit" disabled={isLoading}>{isLoading ? "Loading squad…" : "Load my team"}</button>
+        {process.env.NODE_ENV !== "production" ? <div className={styles.demoEntry}><span>or test before GW1</span><button type="button" onClick={loadDemo} disabled={isLoading}>Use demo squad</button><p>Development only · live players, prices and fixtures</p></div> : null}
         <small>No FPL password needed</small>
       </form>
     </section>
