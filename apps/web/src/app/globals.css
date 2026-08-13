@@ -214,6 +214,48 @@ button, input { font: inherit; }
 .signup-message { min-height: 22px; margin: 11px 0 0; font-size: 13px; }
 .signup-message.success { color: #d9ffe8; }
 .signup-message.error { color: #ffd5e3; }
+.signup-confirmation {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  align-items: center;
+  border: 2px solid white;
+  background: var(--navy);
+  padding: 22px;
+  box-shadow: 6px 6px 0 rgba(12, 32, 48, 0.38);
+}
+.signup-confirmation-check {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  background: var(--green);
+  color: white;
+  font-size: 25px;
+  font-weight: 900;
+}
+.signup-confirmation-label {
+  color: #9ed1d4;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+.signup-confirmation strong {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--display);
+  font-size: 30px;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.signup-confirmation p {
+  margin: 9px 0 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  line-height: 1.45;
+}
 .signup-block small { display: block; margin-top: 12px; color: rgba(255, 255, 255, 0.6); }
 
 .site-footer { min-height: 130px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 40px; font-size: 13px; }
@@ -254,6 +296,7 @@ button, input { font: inherit; }
   .step-card h3 { margin-top: 25px; }
   .signup-form { grid-template-columns: 1fr; }
   .signup-form button { min-height: 54px; }
+  .signup-confirmation { grid-template-columns: 1fr; }
   .site-footer { grid-template-columns: 1fr; gap: 8px; padding-block: 35px; }
 }
 
