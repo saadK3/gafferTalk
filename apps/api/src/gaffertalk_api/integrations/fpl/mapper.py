@@ -61,6 +61,12 @@ def map_catalogue(bootstrap: FplBootstrap, retrieved_at: datetime) -> FplCatalog
             status=element.status,
             chance_of_playing_next_round=element.chance_of_playing_next_round,
             news=element.news,
+            total_points=element.total_points,
+            minutes=element.minutes,
+            starts=element.starts,
+            expected_goals=element.expected_goals,
+            expected_assists=element.expected_assists,
+            selected_by_percent=element.selected_by_percent,
         )
 
     gameweeks = tuple(

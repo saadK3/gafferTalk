@@ -72,6 +72,20 @@ make lookup-team TEAM_ID=1234567
 python -m gaffertalk_api.cli team 1234567 --json
 ```
 
+Run the first one-player recommendation engine against live FPL data and the
+versioned synthetic squad:
+
+```bash
+make recommend-one OUT=Yates
+```
+
+The command loads current players, prices, availability and fixtures from FPL,
+then prints three ranked legal replacements with their score, remaining bank,
+reasons and trade-offs. The synthetic test squad is stored at
+`tests/fixtures/recommendations/synthetic-squad.json`. Before Gameweek 1, the
+official performance totals are treated explicitly as a previous-season
+baseline rather than current form.
+
 The same canonical response is available from the API:
 
 ```bash
