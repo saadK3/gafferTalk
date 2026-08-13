@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     fpl_base_url: str = "https://fantasy.premierleague.com/api/"
     fpl_timeout_seconds: float = Field(default=8.0, gt=0, le=30)
     fpl_max_attempts: int = Field(default=3, ge=1, le=5)
+    groq_api_key: str | None = None
+    groq_base_url: str = "https://api.groq.com/openai/v1/"
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_timeout_seconds: float = Field(default=12.0, gt=0, le=30)
 
     @property
     def allowed_origins(self) -> list[str]:

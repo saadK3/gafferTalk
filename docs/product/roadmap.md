@@ -1,6 +1,6 @@
 # GafferTalk MVP roadmap
 
-Last updated: 2026-08-12
+Last updated: 2026-08-14
 
 ## Launch strategy
 
@@ -134,6 +134,33 @@ Gameweek 2 deadline on August 28.
 Issue #16 is a calendar dependency: it begins immediately after the GW1
 deadline and can change the squad adapter if the observed live response differs
 from the sanitized provisional contract.
+
+## Current development status
+
+Implemented before the GW1 deadline:
+
+- Team ID lookup and current-team confirmation flow
+- Deterministic transfer legality
+- Live-FPL one-player ranking baseline
+- `POST /v1/recommendations/transfers` contract
+- Branded recommendation screen at `/recommend`
+- Groq-backed interpretation and explanation boundary, with deterministic
+  fallback when no local key is configured
+
+## Post-GW1 launch gate
+
+Development can continue with the synthetic squad, but public launch remains
+blocked until issue #16 verifies the real 2026/27 data after the GW1 deadline.
+The launch gate is satisfied only when:
+
+1. At least three real Team IDs load the correct 15-player GW1 squad.
+2. Captain, vice-captain, bench order, bank and squad value match FPL.
+3. A manager can record post-deadline changes and confirm current state.
+4. The recommendation API returns legal options for those real squads.
+5. Groq explanations contain no player, price, fixture or legality claim that
+   is absent from the deterministic engine result.
+6. The complete Team ID → confirmation → question → recommendation journey
+   passes on desktop and mobile before private-beta invitations are sent.
 
 ## Scope guardrails
 

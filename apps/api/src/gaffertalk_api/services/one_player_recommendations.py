@@ -68,7 +68,7 @@ class OnePlayerRecommendationService:
 
         if not legal_candidates:
             return RecommendationResult(
-                synthetic_squad_name=squad_name,
+                squad_name=squad_name,
                 outgoing=outgoing,
                 recommendations=(),
                 assumptions=self._assumptions(fixture_horizon),
@@ -118,7 +118,7 @@ class OnePlayerRecommendationService:
             ) in enumerate(ranked[:limit], start=1)
         )
         return RecommendationResult(
-            synthetic_squad_name=squad_name,
+            squad_name=squad_name,
             outgoing=outgoing,
             recommendations=recommendations,
             assumptions=self._assumptions(fixture_horizon),
@@ -186,7 +186,7 @@ class OnePlayerRecommendationService:
     def _assumptions(fixture_horizon: int) -> tuple[str, ...]:
         return (
             "Players, prices, availability and fixtures were loaded live from FPL.",
-            "The squad, bank, free transfer and selling price are synthetic test inputs.",
+            "The squad, bank, free transfer and selling price are confirmed planning inputs.",
             "Before Gameweek 1, official performance totals are a previous-season "
             "baseline, not current form.",
             f"Score weights: historical output 45%, next {fixture_horizon} fixture "

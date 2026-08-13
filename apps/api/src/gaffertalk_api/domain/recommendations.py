@@ -23,7 +23,7 @@ class TransferRecommendation(DomainModel):
 
 
 class RecommendationResult(DomainModel):
-    synthetic_squad_name: str
+    squad_name: str
     outgoing: Player
     recommendations: tuple[TransferRecommendation, ...]
     assumptions: tuple[str, ...]

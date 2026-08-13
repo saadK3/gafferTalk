@@ -2,6 +2,7 @@
 
 import type { CSSProperties, FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   CurrentTeamApiError,
@@ -164,6 +165,7 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
 }
 
 export function ConfirmTeamFlow() {
+  const router = useRouter();
   const [stage, setStage] = useState<Stage>("lookup");
   const [loadedTeam, setLoadedTeam] = useState<LoadedTeam | null>(null);
   const [changes, setChanges] = useState<Change[]>([]);
@@ -239,6 +241,25 @@ export function ConfirmTeamFlow() {
     if (!loadedTeam?.result.snapshot) return;
     const confirmedState = buildConfirmedCurrentTeam({ teamId: loadedTeam.result.entry.id, sourceGameweek: loadedTeam.result.snapshot.gameweek.id, playerIds: currentSquad.map((player) => player.id), changes: changes.map((change) => ({ outgoingPlayerId: change.outgoing.id, incomingPlayerId: change.incoming.id })), captainId, viceCaptainId, bankTenths: Math.round(parsedBank * 10), freeTransfers: Number(freeTransfers), confirmedAt: new Date().toISOString() });
     window.localStorage.setItem("gaffertalk.currentTeam.v1", JSON.stringify(confirmedState));
+    window.localStorage.setItem("gaffertalk.recommendationSquad.v1", JSON.stringify({
+      squad: {
+        name: loadedTeam.result.entry.team_name,
+        player_ids: currentSquad.map((player) => player.id),
+        squad_positions: Object.fromEntries(currentSquad.map((player, index) => [player.id, index + 1])),
+        bank_tenths: Math.round(parsedBank * 10),
+        free_transfers: Number(freeTransfers),
+      },
+      players: currentSquad.map((player) => ({
+        id: player.id,
+        web_name: player.name,
+        club: { id: player.clubId, name: player.club, short_name: player.club },
+        position: player.position,
+        current_price: { tenths: Math.round(player.price * 10) },
+        status: "a",
+        chance_of_playing_next_round: null,
+        news: "",
+      })),
+    }));
     setStage("ready");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -305,7 +326,7 @@ export function ConfirmTeamFlow() {
         <section className={styles.readyStage}>
           <span className={styles.readyTick}>✓</span><p className={styles.eyebrow}><span>Team ready</span> Trusted planning state</p><h1>You’re ready<br />to make the call.</h1><p className={styles.lede}>GafferTalk now has your current 15-player squad, <strong>£{Number(bank).toFixed(1)}m</strong> in the bank and <strong>{freeTransfers}</strong> free transfer{freeTransfers === "1" ? "" : "s"}.</p>
           <div className={styles.provenanceGrid}><article><span>From public FPL data</span><strong>{snapshot?.gameweek.name} squad snapshot</strong><p>Players, clubs, positions and deadline context.</p></article><article><span>Confirmed by you</span><strong>{changes.length} squad change{changes.length === 1 ? "" : "s"}</strong><p>Current bank, captaincy and free-transfer count.</p></article></div>
-          <div className={styles.readyActions}><button className={styles.primaryAction} type="button">Continue to GafferTalk</button><button className={styles.textButton} type="button" onClick={() => setStage("confirm")}>Edit current team</button></div>
+          <div className={styles.readyActions}><button className={styles.primaryAction} type="button" onClick={() => router.push("/recommend")}>Continue to GafferTalk</button><button className={styles.textButton} type="button" onClick={() => setStage("confirm")}>Edit current team</button></div>
           <p className={styles.prototypeNote}>Your confirmed state is saved on this device. The assistant screen comes next.</p>
         </section>
       ) : null}
