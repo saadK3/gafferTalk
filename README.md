@@ -94,14 +94,22 @@ curl http://localhost:8000/v1/entries/1234567/squad
 
 With both applications running, open `http://localhost:3000/team` to load and
 confirm a current team. The completed state continues to `/recommend`, where
-the manager can choose one outgoing player, ask a natural-language question,
-and receive ranked legal options.
+the free version offers three deterministic Quick Actions for one outgoing
+player:
 
-Groq is optional for local development. Without a key, the recommendation
-screen still uses the deterministic engine and labels the result as an engine
-preview. To test conversational interpretation and explanation, create a local
-`.env` from `.env.example` and set `GAFFERTALK_GROQ_API_KEY`. The key is read by
-the Python backend only and must never be exposed as a `NEXT_PUBLIC` variable.
+- **Best all-rounder:** 45% historical output, 35% next-five fixtures, 20% value
+- **Attack the fixtures:** 25% historical output, 60% fixtures, 15% value
+- **Stretch the budget:** 25% historical output, 20% fixtures, 55% value
+
+The manager can add one ranked option to the local plan. The browser updates
+the 15-player squad, bank and free-transfer count without an account or
+database. This never changes the manager's official FPL team.
+
+Groq is not used by the free Quick Action flow. It remains optional for Pro
+development through the conversational endpoint. To test that endpoint, create
+a local `.env` from `.env.example` and set `GAFFERTALK_GROQ_API_KEY`. The key is
+read by the Python backend only and must never be exposed as a `NEXT_PUBLIC`
+variable.
 
 Recommendation endpoints:
 

@@ -2,7 +2,9 @@ from collections import defaultdict
 
 from gaffertalk_api.domain.models import Fixture, FplCatalogue, Money, Player, SquadSnapshot
 from gaffertalk_api.domain.recommendations import (
+    STRATEGY_WEIGHTS,
     RecommendationResult,
+    RecommendationStrategy,
     ScoreBreakdown,
     TransferRecommendation,
 )
@@ -29,6 +31,7 @@ class OnePlayerRecommendationService:
         fixtures: tuple[Fixture, ...],
         state: TransferPlanningState,
         outgoing_player_id: int,
+        strategy: RecommendationStrategy = RecommendationStrategy.BALANCED,
         limit: int = 3,
         fixture_horizon: int = 5,
     ) -> RecommendationResult:
@@ -38,7 +41,8 @@ class OnePlayerRecommendationService:
         outgoing = catalogue.players[outgoing_player_id]
 
         fixture_difficulties = self._fixture_difficulties(fixtures, fixture_horizon)
-        legal_candidates: list[tuple[Player, Money, float | None, int]] = []
+        weights = STRATEGY_WEIGHTS[strategy]
+        legal_candidates: list[tuple[Player, Money, int, int, float | None, int]] = []
         for candidate in catalogue.players.values():
             if (
                 candidate.id in squad_ids
@@ -60,18 +64,28 @@ class OnePlayerRecommendationService:
             if legality.status is not TransferLegalityStatus.LEGAL:
                 continue
             assert legality.remaining_bank is not None
+            assert state.free_transfers is not None
             difficulties = fixture_difficulties.get(candidate.club.id, ())
             average = sum(difficulties) / len(difficulties) if difficulties else None
             legal_candidates.append(
-                (candidate, legality.remaining_bank, average, len(difficulties))
+                (
+                    candidate,
+                    legality.remaining_bank,
+                    max(0, state.free_transfers - 1),
+                    legality.points_hit,
+                    average,
+                    len(difficulties),
+                )
             )
 
         if not legal_candidates:
             return RecommendationResult(
                 squad_name=squad_name,
                 outgoing=outgoing,
+                strategy=strategy,
+                score_weights=weights,
                 recommendations=(),
-                assumptions=self._assumptions(fixture_horizon),
+                assumptions=self._assumptions(fixture_horizon, strategy),
             )
 
         max_points = max(candidate.total_points for candidate, *_ in legal_candidates) or 1
@@ -82,8 +96,15 @@ class OnePlayerRecommendationService:
             )
             or 1
         )
-        ranked: list[tuple[float, Player, Money, float | None, int, ScoreBreakdown]] = []
-        for candidate, remaining_bank, average, fixture_count in legal_candidates:
+        ranked: list[tuple[float, Player, Money, int, int, float | None, int, ScoreBreakdown]] = []
+        for (
+            candidate,
+            remaining_bank,
+            free_transfers_after,
+            points_hit,
+            average,
+            fixture_count,
+        ) in legal_candidates:
             historical = 100 * candidate.total_points / max_points
             fixture_score = 50.0 if average is None else 100 * (6 - average) / 5
             value_ratio = candidate.total_points / max(candidate.current_price.tenths, 1)
@@ -93,8 +114,23 @@ class OnePlayerRecommendationService:
                 upcoming_fixtures=round(fixture_score, 1),
                 value=round(value, 1),
             )
-            score = 0.45 * historical + 0.35 * fixture_score + 0.20 * value
-            ranked.append((score, candidate, remaining_bank, average, fixture_count, breakdown))
+            score = (
+                weights.historical_output * historical
+                + weights.upcoming_fixtures * fixture_score
+                + weights.value * value
+            )
+            ranked.append(
+                (
+                    score,
+                    candidate,
+                    remaining_bank,
+                    free_transfers_after,
+                    points_hit,
+                    average,
+                    fixture_count,
+                    breakdown,
+                )
+            )
 
         ranked.sort(key=lambda item: (-item[0], item[1].current_price.tenths, item[1].id))
         recommendations = tuple(
@@ -105,6 +141,8 @@ class OnePlayerRecommendationService:
                 score=score,
                 breakdown=breakdown,
                 remaining_bank=remaining_bank,
+                free_transfers_after=free_transfers_after,
+                points_hit=points_hit,
                 average=average,
                 fixture_count=fixture_count,
             )
@@ -112,6 +150,8 @@ class OnePlayerRecommendationService:
                 score,
                 candidate,
                 remaining_bank,
+                free_transfers_after,
+                points_hit,
                 average,
                 fixture_count,
                 breakdown,
@@ -120,8 +160,10 @@ class OnePlayerRecommendationService:
         return RecommendationResult(
             squad_name=squad_name,
             outgoing=outgoing,
+            strategy=strategy,
+            score_weights=weights,
             recommendations=recommendations,
-            assumptions=self._assumptions(fixture_horizon),
+            assumptions=self._assumptions(fixture_horizon, strategy),
         )
 
     @staticmethod
@@ -130,7 +172,7 @@ class OnePlayerRecommendationService:
     ) -> dict[int, tuple[int, ...]]:
         by_club: dict[int, list[tuple[int, int]]] = defaultdict(list)
         for fixture in fixtures:
-            if fixture.finished or fixture.gameweek_id is None:
+            if fixture.started or fixture.finished or fixture.gameweek_id is None:
                 continue
             by_club[fixture.home_club_id].append((fixture.gameweek_id, fixture.home_difficulty))
             by_club[fixture.away_club_id].append((fixture.gameweek_id, fixture.away_difficulty))
@@ -148,6 +190,8 @@ class OnePlayerRecommendationService:
         score: float,
         breakdown: ScoreBreakdown,
         remaining_bank: Money,
+        free_transfers_after: int,
+        points_hit: int,
         average: float | None,
         fixture_count: int,
     ) -> TransferRecommendation:
@@ -173,6 +217,8 @@ class OnePlayerRecommendationService:
             average_fixture_difficulty=round(average, 2) if average is not None else None,
             fixtures_considered=fixture_count,
             remaining_bank=remaining_bank,
+            free_transfers_after=free_transfers_after,
+            points_hit=points_hit,
             reasons=(
                 "Legal same-position transfer under budget and the three-per-club limit.",
                 fixture_reason,
@@ -183,14 +229,16 @@ class OnePlayerRecommendationService:
         )
 
     @staticmethod
-    def _assumptions(fixture_horizon: int) -> tuple[str, ...]:
+    def _assumptions(fixture_horizon: int, strategy: RecommendationStrategy) -> tuple[str, ...]:
+        weights = STRATEGY_WEIGHTS[strategy]
         return (
             "Players, prices, availability and fixtures were loaded live from FPL.",
             "The squad, bank, free transfer and selling price are confirmed planning inputs.",
             "Before Gameweek 1, official performance totals are a previous-season "
             "baseline, not current form.",
-            f"Score weights: historical output 45%, next {fixture_horizon} fixture "
-            "difficulty 35%, value 20%.",
+            f"{strategy.value} score weights: historical output "
+            f"{weights.historical_output:.0%}, next {fixture_horizon} fixture difficulty "
+            f"{weights.upcoming_fixtures:.0%}, value {weights.value:.0%}.",
             "This first version does not model expected minutes, rotation, tactical "
             "role or projected points.",
         )

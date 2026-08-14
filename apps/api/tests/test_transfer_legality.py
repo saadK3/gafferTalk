@@ -59,7 +59,7 @@ def build_catalogue_and_snapshot() -> tuple[FplCatalogue, SquadSnapshot]:
         Position.FORWARD,
     )
     source_players = {
-        1000 + index: make_player(1000 + index, position, 101 + ((index - 1) % 5), 45 + index)
+        1000 + index: make_player(1000 + index, position, 101 + ((index - 1) % 5), 47 + index)
         for index, position in enumerate(positions, start=1)
     }
     candidates = {
@@ -230,3 +230,20 @@ def test_missing_bank_and_free_transfers_are_reported_together() -> None:
         TransferRejectionCode.MISSING_BANK,
         TransferRejectionCode.MISSING_FREE_TRANSFERS,
     }
+
+
+def test_selling_price_cannot_exceed_current_player_price() -> None:
+    catalogue, snapshot = build_catalogue_and_snapshot()
+    result = TransferLegalityService().validate(
+        snapshot=snapshot,
+        catalogue=catalogue,
+        state=TransferPlanningState(
+            bank=Money(tenths=100),
+            free_transfers=1,
+            selling_prices={1003: Money(tenths=51)},
+        ),
+        transfers=(ProposedTransfer(outgoing_player_id=1003, incoming_player_id=2001),),
+    )
+
+    assert result.status is TransferLegalityStatus.ILLEGAL
+    assert result.rejections[0].code is TransferRejectionCode.SELLING_PRICE_ABOVE_CURRENT

@@ -22,6 +22,7 @@ class TransferRejectionCode(StrEnum):
     POSITION_COMPOSITION = "position_composition"
     CLUB_LIMIT = "club_limit"
     INSUFFICIENT_FUNDS = "insufficient_funds"
+    SELLING_PRICE_ABOVE_CURRENT = "selling_price_above_current"
     MISSING_BANK = "missing_bank"
     MISSING_FREE_TRANSFERS = "missing_free_transfers"
     MISSING_SELLING_PRICE = "missing_selling_price"
