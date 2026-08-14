@@ -146,6 +146,10 @@ Implemented before the GW1 deadline:
 - Branded recommendation screen at `/recommend`
 - Groq-backed interpretation and explanation boundary, with deterministic
   fallback when no local key is configured
+- Free beta Quick Actions for balanced, fixture-first and value-first legal
+  one-player recommendations
+- Device-local transfer planning that updates the synthetic/confirmed squad,
+  bank and free-transfer count without an account or database
 
 ## Post-GW1 launch gate
 

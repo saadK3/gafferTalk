@@ -44,6 +44,7 @@ class RecommendationLoader:
             fixtures=fixtures,
             state=state,
             outgoing_player_id=request.outgoing_player_id,
+            strategy=request.strategy,
         )
 
     @staticmethod
@@ -60,6 +61,8 @@ class RecommendationLoader:
             raise ValueError(f"squad references unknown current player {error.args[0]}") from error
         if outgoing_id not in squad.player_ids:
             raise ValueError("outgoing player must be in the confirmed squad")
+        if selling_price_tenths > players_by_id[outgoing_id].current_price.tenths:
+            raise ValueError("selling price cannot exceed the outgoing player's current FPL price")
         gameweek = next(
             (item for item in catalogue.gameweeks if item.is_next or item.is_current),
             catalogue.gameweeks[0],

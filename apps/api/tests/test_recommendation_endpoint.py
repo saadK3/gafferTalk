@@ -5,7 +5,11 @@ import pytest
 
 from gaffertalk_api.domain.models import Club, Money, Player, Position
 from gaffertalk_api.domain.recommendation_requests import TransferRecommendationRequest
-from gaffertalk_api.domain.recommendations import RecommendationResult
+from gaffertalk_api.domain.recommendations import (
+    STRATEGY_WEIGHTS,
+    RecommendationResult,
+    RecommendationStrategy,
+)
 from gaffertalk_api.main import app, get_recommendation_loader
 
 
@@ -22,6 +26,8 @@ class StubRecommendationLoader:
         return RecommendationResult(
             squad_name=request.squad.name,
             outgoing=player,
+            strategy=request.strategy,
+            score_weights=STRATEGY_WEIGHTS[request.strategy],
             recommendations=(),
             assumptions=("Test contract",),
         )
@@ -44,6 +50,7 @@ async def test_transfer_recommendation_endpoint_contract() -> None:
                     },
                     "outgoing_player_id": 8,
                     "outgoing_selling_price_tenths": 45,
+                    "strategy": "fixture_first",
                 },
             )
     finally:
@@ -52,6 +59,8 @@ async def test_transfer_recommendation_endpoint_contract() -> None:
     assert response.status_code == 200
     assert response.json()["squad_name"] == "Test squad"
     assert response.json()["outgoing"]["id"] == 8
+    assert response.json()["strategy"] == RecommendationStrategy.FIXTURE_FIRST
+    assert response.json()["score_weights"]["upcoming_fixtures"] == 0.6
 
 
 @pytest.mark.anyio

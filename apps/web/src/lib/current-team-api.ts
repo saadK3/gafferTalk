@@ -114,13 +114,23 @@ export type Recommendation = {
   score_breakdown: { historical_output: number; upcoming_fixtures: number; value: number };
   average_fixture_difficulty: number | null;
   remaining_bank: ApiMoney;
+  free_transfers_after: number;
+  points_hit: number;
   reasons: string[];
   trade_off: string;
 };
 
+export type RecommendationStrategy = "balanced" | "fixture_first" | "value_first";
+
 export type RecommendationResult = {
   squad_name: string;
   outgoing: ApiPlayer;
+  strategy: RecommendationStrategy;
+  score_weights: {
+    historical_output: number;
+    upcoming_fixtures: number;
+    value: number;
+  };
   recommendations: Recommendation[];
   assumptions: string[];
 };
@@ -139,7 +149,7 @@ export function loadDemoSquad(signal?: AbortSignal): Promise<DemoSquad> {
   return request<DemoSquad>("/v1/demo/squad", signal);
 }
 
-export function recommendTransfer(input: { squad: CurrentSquadRequest; outgoing_player_id: number; outgoing_selling_price_tenths: number }, signal?: AbortSignal): Promise<RecommendationResult> {
+export function recommendTransfer(input: { squad: CurrentSquadRequest; outgoing_player_id: number; outgoing_selling_price_tenths: number; strategy?: RecommendationStrategy }, signal?: AbortSignal): Promise<RecommendationResult> {
   return post<RecommendationResult>("/v1/recommendations/transfers", input, signal);
 }
 

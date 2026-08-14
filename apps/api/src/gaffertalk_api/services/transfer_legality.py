@@ -64,6 +64,23 @@ class TransferLegalityService:
 
         assert state.bank is not None
         assert state.free_transfers is not None
+        impossible_selling_prices = tuple(
+            TransferRejection(
+                code=TransferRejectionCode.SELLING_PRICE_ABOVE_CURRENT,
+                detail="A player's selling price cannot exceed their current FPL price.",
+                player_id=item.outgoing_player_id,
+            )
+            for item in transfers
+            if state.selling_prices[item.outgoing_player_id].tenths
+            > catalogue.players[item.outgoing_player_id].current_price.tenths
+        )
+        if impossible_selling_prices:
+            return self._rejected(
+                TransferLegalityStatus.ILLEGAL,
+                transfers,
+                impossible_selling_prices,
+                free_transfers=state.free_transfers,
+            )
         outgoing_total = sum(
             state.selling_prices[item.outgoing_player_id].tenths for item in transfers
         )

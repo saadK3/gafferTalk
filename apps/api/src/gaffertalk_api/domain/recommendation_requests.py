@@ -1,7 +1,7 @@
 from pydantic import Field, model_validator
 
 from gaffertalk_api.domain.models import DomainModel, Player
-from gaffertalk_api.domain.recommendations import RecommendationResult
+from gaffertalk_api.domain.recommendations import RecommendationResult, RecommendationStrategy
 
 
 class CurrentSquadInput(DomainModel):
@@ -27,6 +27,7 @@ class TransferRecommendationRequest(DomainModel):
     squad: CurrentSquadInput
     outgoing_player_id: int = Field(gt=0)
     outgoing_selling_price_tenths: int = Field(ge=0, le=300)
+    strategy: RecommendationStrategy = RecommendationStrategy.BALANCED
 
 
 class ConversationalRecommendationRequest(DomainModel):
