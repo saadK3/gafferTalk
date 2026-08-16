@@ -3,9 +3,10 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path as FilePath
 from typing import Annotated, Literal
+from uuid import UUID
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -20,13 +21,22 @@ from gaffertalk_api.domain.models import Player, Position, SquadLookupResult
 from gaffertalk_api.domain.recommendation_requests import (
     ConversationalRecommendationRequest,
     ConversationalRecommendationResponse,
+    ConversationOutcome,
     CurrentSquadInput,
     DemoSquadResponse,
+    FreeQuestionQuota,
+    OutgoingSelectionMode,
     TransferRecommendationRequest,
 )
 from gaffertalk_api.domain.recommendations import RecommendationResult
 from gaffertalk_api.integrations.fpl.client import FplClient
 from gaffertalk_api.integrations.llm.groq import GroqConversationClient
+from gaffertalk_api.services.conversation_preflight import ConversationPreflightService
+from gaffertalk_api.services.free_question_usage import (
+    FreeQuestionLimitExceededError,
+    FreeQuestionUsageStore,
+    select_quota_gameweek,
+)
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
 from gaffertalk_api.services.recommendation_loader import RecommendationLoader
 from gaffertalk_api.services.synthetic_squad import load_synthetic_squad
@@ -60,6 +70,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.team_loader = TeamLoader(client)
     application.state.player_catalogue = PlayerCatalogueLoader(client)
     application.state.recommendation_loader = RecommendationLoader(client)
+    application.state.free_usage = FreeQuestionUsageStore(
+        settings.free_usage_database_path,
+        settings.free_question_limit,
+    )
     application.state.groq_client = (
         GroqConversationClient(
             api_key=settings.groq_api_key,
@@ -116,6 +130,39 @@ def get_player_catalogue(request: Request) -> PlayerCatalogueLoader:
 
 def get_recommendation_loader(request: Request) -> RecommendationLoader:
     return request.app.state.recommendation_loader
+
+
+def get_free_usage(request: Request) -> FreeQuestionUsageStore:
+    return request.app.state.free_usage
+
+
+def free_client_id(
+    value: Annotated[str, Header(alias="X-GafferTalk-Client-ID", min_length=36, max_length=36)],
+) -> str:
+    try:
+        return str(UUID(value))
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_client_id", "message": "The browser ID is invalid."},
+        ) from error
+
+
+def upstream_http_exception(error: Exception) -> HTTPException:
+    if isinstance(error, UpstreamFplTimeoutError):
+        return HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"code": "upstream_timeout", "message": str(error)},
+        )
+    if isinstance(error, InvalidUpstreamFplResponseError):
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "invalid_upstream_response", "message": str(error)},
+        )
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={"code": "upstream_unavailable", "message": str(error)},
+    )
 
 
 @app.get(
@@ -210,10 +257,86 @@ async def conversational_recommendation(
     request: ConversationalRecommendationRequest,
     http_request: Request,
     loader: Annotated[RecommendationLoader, Depends(get_recommendation_loader)],
+    catalogue_loader: Annotated[PlayerCatalogueLoader, Depends(get_player_catalogue)],
+    usage: Annotated[FreeQuestionUsageStore, Depends(get_free_usage)],
+    client_id: Annotated[str, Depends(free_client_id)],
 ) -> ConversationalRecommendationResponse:
     """Interpret and explain a deterministic recommendation through Groq."""
 
     groq: GroqConversationClient | None = http_request.app.state.groq_client
+    if groq is None and request.selection_mode is OutgoingSelectionMode.SELECTED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "conversation_unconfigured",
+                "message": "Conversational recommendations need a configured Groq API key.",
+            },
+        )
+    try:
+        catalogue = await catalogue_loader.load()
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    gameweek = select_quota_gameweek(catalogue.gameweeks)
+    try:
+        if request.selection_mode is OutgoingSelectionMode.AUTO:
+            snapshot = RecommendationLoader.build_snapshot(request.squad, catalogue)
+            discovery = ConversationPreflightService().discover_route(
+                question=request.question,
+                snapshot=snapshot,
+                catalogue=catalogue,
+                bank_tenths=request.squad.bank_tenths,
+                free_transfers=request.squad.free_transfers,
+            )
+            assert discovery.outcome is not None and discovery.message is not None
+            return ConversationalRecommendationResponse(
+                assistant_message=discovery.message,
+                interpreted_outgoing_player_id=(
+                    discovery.suggested_outgoing.id
+                    if discovery.suggested_outgoing is not None
+                    else None
+                ),
+                outcome=discovery.outcome,
+                target=discovery.target,
+                suggested_outgoing=discovery.suggested_outgoing,
+                provider="deterministic",
+                model="none",
+                quota=usage.status(client_id, gameweek),
+            )
+        assert request.outgoing_player_id is not None
+        assert request.outgoing_selling_price_tenths is not None
+        snapshot, planning_state = RecommendationLoader.build_state(
+            request.squad,
+            request.outgoing_player_id,
+            request.outgoing_selling_price_tenths,
+            catalogue,
+        )
+        preflight = ConversationPreflightService().validate(
+            question=request.question,
+            outgoing_player_id=request.outgoing_player_id,
+            snapshot=snapshot,
+            catalogue=catalogue,
+            state=planning_state,
+        )
+    except (ValueError, KeyError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_conversation", "message": str(error)},
+        ) from error
+    if not preflight.can_recommend:
+        assert preflight.outcome is not None and preflight.message is not None
+        return ConversationalRecommendationResponse(
+            assistant_message=preflight.message,
+            interpreted_outgoing_player_id=request.outgoing_player_id,
+            outcome=preflight.outcome,
+            target=preflight.target,
+            provider="deterministic",
+            model="none",
+            quota=usage.status(client_id, gameweek),
+        )
     if groq is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -222,26 +345,44 @@ async def conversational_recommendation(
                 "message": "Conversational recommendations need a configured Groq API key.",
             },
         )
-    recommendation_request = TransferRecommendationRequest(
-        squad=request.squad,
-        outgoing_player_id=request.outgoing_player_id,
-        outgoing_selling_price_tenths=request.outgoing_selling_price_tenths,
-    )
     try:
-        catalogue = await http_request.app.state.player_catalogue.load()
+        quota = usage.reserve(client_id, gameweek)
+    except FreeQuestionLimitExceededError as error:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "free_question_limit_reached",
+                "message": str(error),
+                "quota": error.quota.model_dump(mode="json"),
+            },
+        ) from error
+    completed = False
+    try:
         squad_players = tuple(
             catalogue.players[player_id] for player_id in request.squad.player_ids
         )
         intent = await groq.interpret(request.question, squad_players, request.outgoing_player_id)
+        recommendation_request = TransferRecommendationRequest(
+            squad=request.squad,
+            outgoing_player_id=request.outgoing_player_id,
+            outgoing_selling_price_tenths=request.outgoing_selling_price_tenths,
+            strategy=intent.strategy,
+            target_player_id=preflight.target.id if preflight.target is not None else None,
+        )
         result = await loader.recommend(recommendation_request)
         assistant_message = await groq.explain(request.question, result)
-        return ConversationalRecommendationResponse(
+        response = ConversationalRecommendationResponse(
             assistant_message=assistant_message,
             interpreted_outgoing_player_id=intent.outgoing_player_id,
+            outcome=ConversationOutcome.RECOMMENDATION,
+            target=preflight.target,
             result=result,
             provider="groq",
             model=groq.model,
+            quota=quota,
         )
+        completed = True
+        return response
     except (ValueError, KeyError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -252,6 +393,34 @@ async def conversational_recommendation(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "conversation_unavailable", "message": "Groq is unavailable."},
         ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    finally:
+        if not completed:
+            usage.release(client_id, gameweek)
+
+
+@app.get("/v1/free/usage", response_model=FreeQuestionQuota, tags=["recommendations"])
+async def free_question_usage(
+    client_id: Annotated[str, Depends(free_client_id)],
+    usage: Annotated[FreeQuestionUsageStore, Depends(get_free_usage)],
+    loader: Annotated[PlayerCatalogueLoader, Depends(get_player_catalogue)],
+) -> FreeQuestionQuota:
+    """Return this anonymous browser's Free allowance for the active FPL Gameweek."""
+
+    try:
+        catalogue = await loader.load()
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    return usage.status(client_id, select_quota_gameweek(catalogue.gameweeks))
 
 
 @app.get("/v1/demo/squad", response_model=DemoSquadResponse, tags=["development"])

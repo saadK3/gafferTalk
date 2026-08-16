@@ -93,29 +93,34 @@ curl http://localhost:8000/v1/entries/1234567/squad
 ```
 
 With both applications running, open `http://localhost:3000/team` to load and
-confirm a current team. The completed state continues to `/recommend`, where
-the free version offers three deterministic Quick Actions for one outgoing
-player:
+confirm a current team. The completed state continues to `/recommend`, where a
+Free user can ask three one-player transfer questions per FPL Gameweek. Three
+starter prompts cover the supported recommendation strategies:
 
 - **Best all-rounder:** 45% historical output, 35% next-five fixtures, 20% value
 - **Attack the fixtures:** 25% historical output, 60% fixtures, 15% value
 - **Stretch the budget:** 25% historical output, 20% fixtures, 55% value
 
-The manager can add one ranked option to the local plan. The browser updates
+The manager can also write the question in their own words and add one ranked
+option to the local plan. The browser updates
 the 15-player squad, bank and free-transfer count without an account or
 database. This never changes the manager's official FPL team.
 
-Groq is not used by the free Quick Action flow. It remains optional for Pro
-development through the conversational endpoint. To test that endpoint, create
-a local `.env` from `.env.example` and set `GAFFERTALK_GROQ_API_KEY`. The key is
-read by the Python backend only and must never be exposed as a `NEXT_PUBLIC`
-variable.
+Groq interprets the Free question and explains the engine result. Create a local
+`.env` from `.env.example` and set `GAFFERTALK_GROQ_API_KEY`. The key is read by
+the Python backend only and must never be exposed as a `NEXT_PUBLIC` variable.
+The backend persists anonymous per-Gameweek usage in a gitignored local SQLite
+file; validation and provider failures do not consume a question.
+Named-player questions first pass deterministic ownership, position,
+availability, budget and club-limit checks. Invalid or unsupported moves return
+an actionable explanation without calling Groq or consuming the allowance.
 
 Recommendation endpoints:
 
 ```text
 POST /v1/recommendations/transfers
 POST /v1/recommendations/conversation
+GET /v1/free/usage
 ```
 
 Before the first deadline, a valid entry is returned with an explicit

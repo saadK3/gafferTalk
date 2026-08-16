@@ -55,6 +55,8 @@ class Gameweek(DomainModel):
 class Player(DomainModel):
     id: int = Field(gt=0)
     web_name: str = Field(min_length=1)
+    first_name: str = ""
+    second_name: str = ""
     club: Club
     position: Position
     current_price: Money

@@ -1,6 +1,6 @@
 # GafferTalk MVP roadmap
 
-Last updated: 2026-08-14
+Last updated: 2026-08-16
 
 ## Launch strategy
 
@@ -144,10 +144,11 @@ Implemented before the GW1 deadline:
 - Live-FPL one-player ranking baseline
 - `POST /v1/recommendations/transfers` contract
 - Branded recommendation screen at `/recommend`
-- Groq-backed interpretation and explanation boundary, with deterministic
-  fallback when no local key is configured
-- Free beta Quick Actions for balanced, fixture-first and value-first legal
+- Groq-backed interpretation and grounded explanation boundary
+- Free conversational beta with balanced, fixture-first and value-first legal
   one-player recommendations
+- Backend-enforced allowance of three successful questions per browser and
+  official FPL Gameweek, with failed requests refunded
 - Device-local transfer planning that updates the synthetic/confirmed squad,
   bank and free-transfer count without an account or database
 

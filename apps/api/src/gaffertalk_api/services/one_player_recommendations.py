@@ -32,6 +32,7 @@ class OnePlayerRecommendationService:
         state: TransferPlanningState,
         outgoing_player_id: int,
         strategy: RecommendationStrategy = RecommendationStrategy.BALANCED,
+        target_player_id: int | None = None,
         limit: int = 3,
         fixture_horizon: int = 5,
     ) -> RecommendationResult:
@@ -48,6 +49,7 @@ class OnePlayerRecommendationService:
                 candidate.id in squad_ids
                 or candidate.position is not outgoing.position
                 or candidate.status != "a"
+                or (target_player_id is not None and candidate.id != target_player_id)
             ):
                 continue
             legality = self._legality.validate(

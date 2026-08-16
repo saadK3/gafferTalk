@@ -30,6 +30,7 @@ async def test_groq_interpretation_must_preserve_selected_player() -> None:
                             "content": json.dumps(
                                 {
                                     "outgoing_player_id": 12,
+                                    "strategy": "fixture_first",
                                     "interpretation": "Prioritise easier fixtures.",
                                 }
                             )
@@ -55,4 +56,5 @@ async def test_groq_interpretation_must_preserve_selected_player() -> None:
         await http_client.aclose()
 
     assert intent.outgoing_player_id == 12
+    assert intent.strategy == "fixture_first"
     assert intent.interpretation == "Prioritise easier fixtures."
