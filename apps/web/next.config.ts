@@ -4,7 +4,27 @@ import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  async redirects() {
+    const appHostname = process.env.NEXT_PUBLIC_APP_HOST;
+
+    if (!appHostname) {
+      return [];
+    }
+
+    return [
+      {
+        source: "/",
+        has: [
+          {
+            type: "host",
+            value: appHostname,
+          },
+        ],
+        destination: "/team",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

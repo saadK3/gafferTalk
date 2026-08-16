@@ -3,7 +3,7 @@
 import type { CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   CurrentTeamApiError,
   loadDemoSquad,
@@ -13,6 +13,7 @@ import {
   type Position,
   type SquadLookupResult,
 } from "@/lib/current-team-api";
+import { isDemoSquadEnabled } from "@/lib/deployment";
 import { assignLeadership, buildConfirmedCurrentTeam } from "@/lib/current-team-state";
 import styles from "./confirm-team.module.css";
 
@@ -53,6 +54,10 @@ const positionNames: Record<Position, string> = {
 };
 
 function money(value: number) { return `£${value.toFixed(1)}m`; }
+
+function subscribeToBrowserReady() {
+  return () => undefined;
+}
 
 function toPlayer(player: ApiPlayer, group: Player["group"] = "starter"): Player {
   const [kit, kitSecondary] = clubPalette[player.club.short_name] ?? ["#168594", "#0c2030"];
@@ -135,6 +140,10 @@ function demoLoadedTeam(players: ApiPlayer[]): LoadedTeam {
 }
 
 function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
+  const browserReady = useSyncExternalStore(subscribeToBrowserReady, () => true, () => false);
+  const demoEnabled = process.env.NODE_ENV !== "production" || (
+    browserReady && isDemoSquadEnabled(window.location.hostname)
+  );
   const [id, setId] = useState(() => {
     if (typeof window === "undefined") return "";
     const savedId = window.localStorage.getItem("gaffertalk.teamId");
@@ -191,7 +200,7 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
         <p id="team-id-help">Find this number in the URL of your public FPL points page.</p>
         {error ? <p className={styles.fieldError} id="team-id-error" role="alert">{error}</p> : null}
         <button className={styles.primaryAction} type="submit" disabled={isLoading}>{isLoading ? "Loading squad…" : "Load my team"}</button>
-        {process.env.NODE_ENV !== "production" ? <div className={styles.demoEntry}><span>or test before GW1</span><button type="button" onClick={loadDemo} disabled={isLoading}>Use demo squad</button><p>Development only · live players, prices and fixtures</p></div> : null}
+        {demoEnabled ? <div className={styles.demoEntry}><span>or test before GW1</span><button type="button" onClick={loadDemo} disabled={isLoading}>Use demo squad</button><p>Staging beta · live players, prices and fixtures</p></div> : null}
         <small>No FPL password needed</small>
       </form>
     </section>
