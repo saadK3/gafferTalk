@@ -1,7 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "GafferTalk API"
-    environment: str = "development"
+    environment: Literal["development", "test", "staging", "production"] = "development"
     cors_origins: str = "http://localhost:3000"
     fpl_base_url: str = "https://fantasy.premierleague.com/api/"
     fpl_timeout_seconds: float = Field(default=8.0, gt=0, le=30)
@@ -30,6 +32,32 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def deployment_configuration_is_safe(self) -> "Settings":
+        if self.environment not in {"staging", "production"}:
+            return self
+        if not self.groq_api_key or not self.groq_api_key.strip():
+            raise ValueError("staging and production require GAFFERTALK_GROQ_API_KEY")
+        if not self.free_usage_database_path.is_absolute():
+            raise ValueError(
+                "staging and production require an absolute persistent usage database path"
+            )
+        if not self.allowed_origins:
+            raise ValueError("staging and production require at least one CORS origin")
+        for origin in self.allowed_origins:
+            parsed = urlparse(origin)
+            if (
+                parsed.scheme != "https"
+                or not parsed.netloc
+                or "*" in origin
+                or parsed.path not in {"", "/"}
+                or parsed.params
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("staging and production CORS origins must be exact HTTPS origins")
+        return self
 
 
 @lru_cache

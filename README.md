@@ -115,6 +115,12 @@ Named-player questions first pass deterministic ownership, position,
 availability, budget and club-limit checks. Invalid or unsupported moves return
 an actionable explanation without calling Groq or consuming the allowance.
 
+The API is prepared for a private Railway staging service while the web
+application remains on Cloudflare. See the
+[Railway API runbook](docs/operations/railway-api.md) for the monorepo paths,
+environment variables, persistent volume and smoke-test checklist. Deployment
+still requires owner confirmation and the real-squad Gameweek 1 launch gate.
+
 Recommendation endpoints:
 
 ```text
