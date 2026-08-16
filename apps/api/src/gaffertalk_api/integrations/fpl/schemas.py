@@ -38,6 +38,8 @@ class FplElementType(FplSchema):
 class FplElement(FplSchema):
     id: int = Field(gt=0)
     web_name: str = Field(min_length=1)
+    first_name: str = ""
+    second_name: str = ""
     team: int = Field(gt=0)
     element_type: int = Field(gt=0)
     now_cost: int = Field(ge=0)

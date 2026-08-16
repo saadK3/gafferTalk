@@ -31,7 +31,7 @@ class RecommendationLoader:
         retrieved_at = datetime.now(UTC)
         catalogue = map_catalogue(bootstrap, retrieved_at)
         fixtures = map_fixtures(raw_fixtures)
-        snapshot, state = self._build_state(
+        snapshot, state = self.build_state(
             request.squad,
             request.outgoing_player_id,
             request.outgoing_selling_price_tenths,
@@ -45,24 +45,36 @@ class RecommendationLoader:
             state=state,
             outgoing_player_id=request.outgoing_player_id,
             strategy=request.strategy,
+            target_player_id=request.target_player_id,
         )
 
     @staticmethod
-    def _build_state(
+    def build_state(
         squad: CurrentSquadInput,
         outgoing_id: int,
         selling_price_tenths: int,
         catalogue: FplCatalogue,
     ) -> tuple[SquadSnapshot, TransferPlanningState]:
         players_by_id = catalogue.players
-        try:
-            players = [players_by_id[player_id] for player_id in squad.player_ids]
-        except KeyError as error:
-            raise ValueError(f"squad references unknown current player {error.args[0]}") from error
+        snapshot = RecommendationLoader.build_snapshot(squad, catalogue)
         if outgoing_id not in squad.player_ids:
             raise ValueError("outgoing player must be in the confirmed squad")
         if selling_price_tenths > players_by_id[outgoing_id].current_price.tenths:
             raise ValueError("selling price cannot exceed the outgoing player's current FPL price")
+        state = TransferPlanningState(
+            bank=Money(tenths=squad.bank_tenths),
+            free_transfers=squad.free_transfers,
+            selling_prices={outgoing_id: Money(tenths=selling_price_tenths)},
+        )
+        return snapshot, state
+
+    @staticmethod
+    def build_snapshot(squad: CurrentSquadInput, catalogue: FplCatalogue) -> SquadSnapshot:
+        players_by_id = catalogue.players
+        try:
+            players = [players_by_id[player_id] for player_id in squad.player_ids]
+        except KeyError as error:
+            raise ValueError(f"squad references unknown current player {error.args[0]}") from error
         gameweek = next(
             (item for item in catalogue.gameweeks if item.is_next or item.is_current),
             catalogue.gameweeks[0],
@@ -90,12 +102,7 @@ class RecommendationLoader:
             provenance=DataProvenance.USER_SUPPLIED,
             retrieved_at=datetime.now(UTC),
         )
-        state = TransferPlanningState(
-            bank=Money(tenths=squad.bank_tenths),
-            free_transfers=squad.free_transfers,
-            selling_prices={outgoing_id: Money(tenths=selling_price_tenths)},
-        )
-        return snapshot, state
+        return snapshot
 
     @staticmethod
     def _order_for_valid_snapshot(players: list[Player]) -> list[Player]:

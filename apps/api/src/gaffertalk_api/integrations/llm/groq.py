@@ -37,8 +37,11 @@ class GroqConversationClient:
         content = await self._completion(
             system=(
                 "You interpret an FPL manager's transfer question. The UI has already selected "
-                "the outgoing player. Return JSON only with that exact outgoing_player_id and a "
-                "short interpretation of the manager's priorities. Never invent a player or ID."
+                "the outgoing player. Return JSON only with that exact outgoing_player_id, one "
+                "strategy (balanced, fixture_first, or value_first), and a short interpretation "
+                "of the manager's priorities. Use fixture_first for immediate fixture emphasis, "
+                "value_first for savings/value emphasis, and balanced otherwise. Never invent a "
+                "player or ID."
             ),
             user=json.dumps(
                 {
@@ -76,8 +79,11 @@ class GroqConversationClient:
         return await self._completion(
             system=(
                 "You are GafferTalk. Answer concisely using only the supplied engine facts. "
-                "State that the options are a preseason baseline. Do not invent statistics, "
-                "prices, players, certainty, or transfers. The manager makes the final call."
+                "Use plain text only, with no Markdown formatting. Write two to four short "
+                "sentences: name the top option, explain it with at least one supplied reason "
+                "or trade-off, and briefly distinguish another option when available. Do not "
+                "invent statistics, prices, players, certainty, or transfers. The manager makes "
+                "the final call."
             ),
             user=json.dumps({"question": question, "engine_facts": facts}),
             json_mode=False,

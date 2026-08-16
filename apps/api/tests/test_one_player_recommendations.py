@@ -157,6 +157,17 @@ def test_recommendations_are_ranked_and_illegal_candidates_are_removed() -> None
     assert all(item.incoming.position is outgoing.position for item in result.recommendations)
     assert "loaded live from FPL" in result.assumptions[0]
 
+    targeted = OnePlayerRecommendationService().recommend(
+        squad_name="Test squad",
+        snapshot=snapshot,
+        catalogue=catalogue,
+        fixtures=fixtures,
+        state=state,
+        outgoing_player_id=outgoing.id,
+        target_player_id=cheaper.id,
+    )
+    assert [item.incoming.id for item in targeted.recommendations] == [cheaper.id]
+
 
 def test_quick_actions_use_distinct_weights_and_change_ranking() -> None:
     clubs = {

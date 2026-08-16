@@ -3,15 +3,18 @@
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  askGafferTalk,
   CurrentTeamApiError,
   loadDemoSquad,
-  recommendTransfer,
+  loadFreeUsage,
   type ApiPlayer,
   type CurrentSquadRequest,
+  type ConversationOutcome,
+  type FreeQuestionQuota,
   type Recommendation,
   type RecommendationResult,
-  type RecommendationStrategy,
 } from "@/lib/current-team-api";
+import { getOrCreateFreeClientId } from "@/lib/free-plan";
 import {
   applyRecommendationToSquad,
   parseSavedRecommendationSquad,
@@ -19,44 +22,34 @@ import {
 } from "@/lib/free-recommendation-state";
 import styles from "./recommendation.module.css";
 
-type QuickAction = {
-  id: RecommendationStrategy;
+type StarterQuestion = {
   number: string;
   title: string;
-  description: string;
-  weights: string;
+  question: (player: string) => string;
 };
 
-const quickActions: QuickAction[] = [
+type SelectionMode = "selected" | "auto";
+
+const starterQuestions: StarterQuestion[] = [
   {
-    id: "balanced",
     number: "01",
     title: "Best all-rounder",
-    description: "Balance proven output, the next five fixtures and price.",
-    weights: "45% output · 35% fixtures · 20% value",
+    question: (player) => `Who is the best all-round replacement for ${player}?`,
   },
   {
-    id: "fixture_first",
     number: "02",
     title: "Attack the fixtures",
-    description: "Lean into the strongest immediate run without ignoring output.",
-    weights: "25% output · 60% fixtures · 15% value",
+    question: (player) => `Who should replace ${player} if I want to attack the next five fixtures?`,
   },
   {
-    id: "value_first",
     number: "03",
     title: "Stretch the budget",
-    description: "Prioritise points per £m and leave more money in the bank.",
-    weights: "25% output · 20% fixtures · 55% value",
+    question: (player) => `What is the best value replacement for ${player} that leaves money in the bank?`,
   },
 ];
 
 function money(tenths: number) {
   return `£${(tenths / 10).toFixed(1)}m`;
-}
-
-function actionName(strategy: RecommendationStrategy): string {
-  return quickActions.find((action) => action.id === strategy)?.title ?? "Quick Action";
 }
 
 function defaultPlayer(nextPlayers: ApiPlayer[]): ApiPlayer {
@@ -71,8 +64,15 @@ export function RecommendationExperience() {
   const [squad, setSquad] = useState<CurrentSquadRequest | null>(null);
   const [players, setPlayers] = useState<ApiPlayer[]>([]);
   const [outgoingId, setOutgoingId] = useState(0);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("selected");
+  const [confirmingSuggestedRoute, setConfirmingSuggestedRoute] = useState(false);
   const [sellingPrice, setSellingPrice] = useState(0);
-  const [strategy, setStrategy] = useState<RecommendationStrategy>("balanced");
+  const [question, setQuestion] = useState("");
+  const [assistantMessage, setAssistantMessage] = useState("");
+  const [outcome, setOutcome] = useState<ConversationOutcome | null>(null);
+  const [clientId, setClientId] = useState("");
+  const [quota, setQuota] = useState<FreeQuestionQuota | null>(null);
+  const [quotaError, setQuotaError] = useState("");
   const [result, setResult] = useState<RecommendationResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -83,13 +83,27 @@ export function RecommendationExperience() {
     setSquad(nextSquad);
     setPlayers(nextPlayers);
     setOutgoingId(selected.id);
+    setSelectionMode("selected");
+    setConfirmingSuggestedRoute(false);
     setSellingPrice(selected.current_price.tenths);
+    setQuestion(starterQuestions[0].question(selected.web_name));
+    setAssistantMessage("");
+    setOutcome(null);
     setResult(null);
     setError("");
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
+    const browserId = getOrCreateFreeClientId(window.localStorage);
+    Promise.resolve().then(() => setClientId(browserId));
+    loadFreeUsage(browserId, controller.signal)
+      .then(setQuota)
+      .catch((caught) => {
+        if (!(caught instanceof DOMException) || caught.name !== "AbortError") {
+          setQuotaError("Your Free Gameweek allowance could not be loaded. Start the API and try again.");
+        }
+      });
     const confirmed = parseSavedRecommendationSquad(
       window.localStorage.getItem(RECOMMENDATION_STORAGE_KEY),
     );
@@ -118,20 +132,43 @@ export function RecommendationExperience() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!squad || !outgoing) return;
+    if (!squad || !clientId || !quota || quota.remaining === 0) return;
+    if (selectionMode === "selected" && !outgoing) return;
     setIsLoading(true);
     setError("");
     setNotice("");
     setResult(null);
+    setAssistantMessage("");
+    setOutcome(null);
     try {
-      const recommendation = await recommendTransfer({
-        squad,
-        outgoing_player_id: outgoing.id,
-        outgoing_selling_price_tenths: sellingPrice,
-        strategy,
-      });
-      setResult(recommendation);
+      const response = await askGafferTalk(
+        selectionMode === "auto"
+          ? { squad, selection_mode: "auto", question }
+          : {
+              squad,
+              selection_mode: "selected",
+              outgoing_player_id: outgoing!.id,
+              outgoing_selling_price_tenths: sellingPrice,
+              question,
+            },
+        clientId,
+      );
+      setResult(response.result);
+      setAssistantMessage(response.assistant_message);
+      setOutcome(response.outcome);
+      setQuota(response.quota);
+      if (response.outcome === "selling_price_required" && response.suggested_outgoing) {
+        setOutgoingId(response.suggested_outgoing.id);
+        setSellingPrice(response.suggested_outgoing.current_price.tenths);
+        setSelectionMode("selected");
+        setConfirmingSuggestedRoute(true);
+      } else {
+        setConfirmingSuggestedRoute(false);
+      }
     } catch (caught) {
+      if (caught instanceof CurrentTeamApiError && caught.code === "free_question_limit_reached") {
+        setQuota((current) => current ? { ...current, used: current.limit, remaining: 0 } : current);
+      }
       setError(
         caught instanceof CurrentTeamApiError
           ? caught.message
@@ -156,6 +193,9 @@ export function RecommendationExperience() {
       setOutgoingId(recommendation.incoming.id);
       setSellingPrice(recommendation.incoming.current_price.tenths);
       setResult(null);
+      setAssistantMessage("");
+      setOutcome(null);
+      setConfirmingSuggestedRoute(false);
       setError("");
       setNotice(
         `${outgoing.web_name} → ${recommendation.incoming.web_name} added to this device’s plan. ` +
@@ -195,18 +235,18 @@ export function RecommendationExperience() {
         </Link>
         <div>
           <span>Free beta</span><i />
-          <b>{squad?.name === "GafferTalk Synthetic XI" ? "Synthetic squad" : "Confirmed squad"}</b>
+          <b>{quota ? `${quota.remaining} of ${quota.limit} questions left` : "Loading allowance"}</b>
         </div>
         <Link href="/team">Use my Team ID</Link>
       </header>
 
       <section className={styles.hero}>
         <div>
-          <p className={styles.eyebrow}>Three Quick Actions · no AI credits required</p>
-          <h1>Pick the job.<br /><em>Get the shortlist.</em></h1>
+          <p className={styles.eyebrow}>Three transfer questions every Gameweek</p>
+          <h1>Ask the question.<br /><em>Get the shortlist.</em></h1>
           <p>
-            Choose the player you are considering selling. GafferTalk checks live prices,
-            fixtures, availability, budget and FPL squad rules before ranking three options.
+            Tell GafferTalk what matters to you. It does the research, then checks live prices,
+            fixtures, availability, budget and FPL squad rules before answering.
           </p>
         </div>
         <aside>
@@ -215,100 +255,153 @@ export function RecommendationExperience() {
           <dl>
             <div><dt>Bank</dt><dd>{money(squad?.bank_tenths ?? 0)}</dd></div>
             <div><dt>Free transfers</dt><dd>{squad?.free_transfers ?? 0}</dd></div>
-            <div><dt>Players</dt><dd>{players.length}</dd></div>
+            <div><dt>Questions left</dt><dd>{quota?.remaining ?? "—"}</dd></div>
           </dl>
           <button type="button" onClick={resetDemo} disabled={isLoading}>Reset demo squad</button>
         </aside>
       </section>
 
       {notice ? <p className={styles.notice} role="status">✓ {notice}</p> : null}
+      {quotaError ? <p className={styles.errorBanner} role="alert">{quotaError}</p> : null}
 
       <form className={styles.flow} onSubmit={submit}>
         <section className={styles.setupPanel}>
           <div className={styles.panelHeading}>
             <span>01</span><div><small>Your squad</small><h2>Choose who could go</h2></div>
           </div>
-          <label htmlFor="outgoing">Player to replace</label>
-          <select
-            id="outgoing"
-            value={outgoingId}
-            onChange={(event) => {
-              const id = Number(event.target.value);
-              const player = players.find((item) => item.id === id);
-              setOutgoingId(id);
-              if (player) setSellingPrice(player.current_price.tenths);
-              setResult(null);
-              setNotice("");
-            }}
-          >
-            {players.map((player) => (
-              <option value={player.id} key={player.id}>
-                {player.web_name} · {player.position} · {player.club.short_name} · {money(player.current_price.tenths)}
-              </option>
-            ))}
-          </select>
-          <label htmlFor="selling-price">Your selling price</label>
-          <div className={styles.priceInput}>
-            <span>£</span>
-            <input
-              id="selling-price"
-              type="number"
-              min="3.5"
-              max={(outgoing?.current_price.tenths ?? 300) / 10}
-              step="0.1"
-              required
-              value={(sellingPrice / 10).toFixed(1)}
-              onChange={(event) => setSellingPrice(Math.round(Number(event.target.value) * 10))}
-            />
-            <span>m</span>
+          <div className={styles.modeSwitch} aria-label="Choose how to plan the transfer">
+            <button
+              type="button"
+              className={selectionMode === "selected" ? styles.activeMode : ""}
+              onClick={() => {
+                setSelectionMode("selected");
+                setConfirmingSuggestedRoute(false);
+                setAssistantMessage("");
+                setOutcome(null);
+              }}
+            >I know who to sell</button>
+            <button
+              type="button"
+              className={selectionMode === "auto" ? styles.activeMode : ""}
+              onClick={() => {
+                setSelectionMode("auto");
+                setConfirmingSuggestedRoute(false);
+                setQuestion("What is the best way to get Ødegaard into my squad?");
+                setAssistantMessage("");
+                setOutcome(null);
+                setResult(null);
+              }}
+            >Find who to sell</button>
           </div>
-          <p className={styles.fieldHelp}>
-            FPL’s public feed does not expose your private selling price during an open Gameweek.
-          </p>
+          {selectionMode === "auto" ? (
+            <div className={styles.autoHelp}>
+              <strong>Name the player you want.</strong>
+              <p>GafferTalk checks every same-position player in your squad and finds the lowest-sacrifice plausible route. This first check is free.</p>
+            </div>
+          ) : (
+            <>
+              {confirmingSuggestedRoute ? <p className={styles.confirmBadge}>Confirm this route before using a question</p> : null}
+              <label htmlFor="outgoing">Player to replace</label>
+              <select
+                id="outgoing"
+                value={outgoingId}
+                onChange={(event) => {
+                  const id = Number(event.target.value);
+                  const player = players.find((item) => item.id === id);
+                  setOutgoingId(id);
+                  if (player) setSellingPrice(player.current_price.tenths);
+                  setConfirmingSuggestedRoute(false);
+                  setResult(null);
+                  setAssistantMessage("");
+                  setOutcome(null);
+                  if (player) setQuestion(starterQuestions[0].question(player.web_name));
+                  setNotice("");
+                }}
+              >
+                {players.map((player) => (
+                  <option value={player.id} key={player.id}>
+                    {player.web_name} · {player.position} · {player.club.short_name} · {money(player.current_price.tenths)}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="selling-price">Your actual FPL selling price</label>
+              <div className={styles.priceInput}>
+                <span>£</span>
+                <input
+                  id="selling-price"
+                  type="number"
+                  min="3.5"
+                  max={(outgoing?.current_price.tenths ?? 300) / 10}
+                  step="0.1"
+                  required
+                  value={(sellingPrice / 10).toFixed(1)}
+                  onChange={(event) => setSellingPrice(Math.round(Number(event.target.value) * 10))}
+                />
+                <span>m</span>
+              </div>
+              <p className={styles.fieldHelp}>
+                FPL’s public feed does not expose your private selling price during an open Gameweek.
+              </p>
+            </>
+          )}
         </section>
 
-        <fieldset className={styles.actionPanel}>
-          <legend><span>02</span><div><small>Quick Action</small><strong>What should we optimise?</strong></div></legend>
-          <div className={styles.actionGrid}>
-            {quickActions.map((action) => (
-              <label
-                className={`${styles.actionCard} ${strategy === action.id ? styles.selectedAction : ""}`}
-                key={action.id}
+        <fieldset className={styles.actionPanel} disabled={quota?.remaining === 0}>
+          <legend><span>02</span><div><small>Your question</small><strong>What do you want to solve?</strong></div></legend>
+          <div className={styles.promptGrid}>
+            {selectionMode === "selected" ? starterQuestions.map((starter) => (
+              <button
+                type="button"
+                key={starter.number}
+                onClick={() => outgoing && setQuestion(starter.question(outgoing.web_name))}
               >
-                <input
-                  type="radio"
-                  name="strategy"
-                  value={action.id}
-                  checked={strategy === action.id}
-                  onChange={() => {
-                    setStrategy(action.id);
-                    setResult(null);
-                  }}
-                />
-                <span>{action.number}</span>
-                <strong>{action.title}</strong>
-                <p>{action.description}</p>
-                <small>{action.weights}</small>
-              </label>
-            ))}
+                <span>{starter.number}</span>{starter.title}
+              </button>
+            )) : null}
+          </div>
+          <label className={styles.questionLabel} htmlFor="transfer-question">Ask in your own words</label>
+          <textarea
+            id="transfer-question"
+            minLength={3}
+            maxLength={500}
+            required
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder={selectionMode === "auto" ? "What is the best way to get Ødegaard into my squad?" : "Who should replace this player, and why?"}
+          />
+          <div className={styles.quotaLine}>
+            <span>{question.length}/500</span>
+            <strong>{quota ? `${quota.remaining} question${quota.remaining === 1 ? "" : "s"} left in ${quota.gameweek_name}` : "Checking allowance…"}</strong>
           </div>
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
-          <button className={styles.primary} disabled={isLoading || !squad || !outgoing}>
-            {isLoading ? "Doing the homework…" : `Run ${actionName(strategy)}`}
+          {quota?.remaining === 0 ? (
+            <div className={styles.limitReached} role="status">
+              <strong>That’s your three for {quota.gameweek_name}.</strong>
+              <span>Your allowance resets when FPL moves to the next Gameweek. Pro will include a much larger fair-use limit.</span>
+            </div>
+          ) : null}
+          <button className={styles.primary} disabled={isLoading || !squad || (selectionMode === "selected" && !outgoing) || !quota || quota.remaining === 0 || question.trim().length < 3}>
+            {isLoading ? "Doing the homework…" : selectionMode === "auto" ? "Find the best route" : confirmingSuggestedRoute ? "Confirm price & ask GafferTalk" : "Ask GafferTalk"}
           </button>
-          <small className={styles.security}>Deterministic engine only. No prompt, Groq call or FPL password.</small>
+          <small className={styles.security}>Groq reads the question and explains the result. GafferTalk’s deterministic engine decides legality, numbers and ranking. No FPL password needed.</small>
         </fieldset>
       </form>
 
       <section className={styles.results} aria-live="polite">
         <div className={styles.panelHeading}>
-          <span>03</span><div><small>Legal shortlist</small><h2>Compare the trade-offs</h2></div>
-          {result ? <b>{actionName(result.strategy)}</b> : null}
+          <span>03</span><div><small>{outcome && outcome !== "recommendation" ? "Rule check" : "Legal shortlist"}</small><h2>{outcome && outcome !== "recommendation" ? "Here’s what needs fixing" : "Compare the trade-offs"}</h2></div>
+          {result ? <b>{result.strategy.replace("_", " ")}</b> : null}
         </div>
-        {!result ? (
+        {!result && assistantMessage ? (
+          <div className={styles.guidance}>
+            <span>No Free question used</span>
+            <strong>{assistantMessage}</strong>
+            <p>Adjust the selected player or question, then ask again.</p>
+          </div>
+        ) : !result ? (
           <div className={styles.empty}>
-            <strong>One player.<br />One Quick Action.</strong>
-            <p>The engine will return up to three legal options with the evidence and the catch.</p>
+            <strong>One player.<br />One clear question.</strong>
+            <p>GafferTalk will return up to three legal options with the evidence and the catch.</p>
           </div>
         ) : result.recommendations.length === 0 ? (
           <div className={styles.empty}>
@@ -317,6 +410,7 @@ export function RecommendationExperience() {
           </div>
         ) : (
           <>
+            <div className={styles.answer}><span>GafferTalk says</span><p>{assistantMessage}</p></div>
             <div className={styles.cards}>
               {result.recommendations.map((item) => (
                 <article className={styles.card} key={item.incoming.id}>
@@ -347,7 +441,7 @@ export function RecommendationExperience() {
 
       <aside className={styles.proTeaser}>
         <span>Coming later · GafferTalk Pro</span>
-        <div><strong>Want to ask your own question?</strong><p>Conversational planning, richer context and follow-up questions will live in Pro. The free engine stays useful without an LLM.</p></div>
+        <div><strong>Plan the whole Gameweek.</strong><p>Pro will add multi-transfer routes, three-to-five Gameweek planning, saved conversations and a much larger fair-use question limit.</p></div>
       </aside>
 
       <footer className={styles.footer}><span>GafferTalk does the homework.</span><b>You make the call.</b></footer>

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,8 +22,10 @@ class Settings(BaseSettings):
     fpl_max_attempts: int = Field(default=3, ge=1, le=5)
     groq_api_key: str | None = None
     groq_base_url: str = "https://api.groq.com/openai/v1/"
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-20b"
     groq_timeout_seconds: float = Field(default=12.0, gt=0, le=30)
+    free_question_limit: int = Field(default=3, ge=1, le=20)
+    free_usage_database_path: Path = Path(".data/gaffertalk.sqlite3")
 
     @property
     def allowed_origins(self) -> list[str]:

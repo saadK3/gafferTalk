@@ -55,6 +55,8 @@ def map_catalogue(bootstrap: FplBootstrap, retrieved_at: datetime) -> FplCatalog
         players[element.id] = Player(
             id=element.id,
             web_name=element.web_name,
+            first_name=element.first_name,
+            second_name=element.second_name,
             club=club,
             position=position,
             current_price=Money(tenths=element.now_cost),

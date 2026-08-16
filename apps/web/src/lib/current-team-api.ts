@@ -48,6 +48,7 @@ export class CurrentTeamApiError extends Error {
     message: string,
     readonly status: number,
     readonly code: string,
+    readonly detail?: unknown,
   ) {
     super(message);
   }
@@ -72,18 +73,19 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
       payload?.detail?.message ?? "The team service could not complete that request.",
       response.status,
       payload?.detail?.code ?? "unknown_error",
+      payload?.detail,
     );
   }
   return response.json() as Promise<T>;
 }
 
-async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+async function post<T>(path: string, body: unknown, signal?: AbortSignal, headers?: HeadersInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl()}${path}`, {
       method: "POST",
       signal,
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      headers: { Accept: "application/json", "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     });
   } catch (error) {
@@ -92,7 +94,7 @@ async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promi
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { detail?: { code?: string; message?: string } } | null;
-    throw new CurrentTeamApiError(payload?.detail?.message ?? "The recommendation could not be completed.", response.status, payload?.detail?.code ?? "unknown_error");
+    throw new CurrentTeamApiError(payload?.detail?.message ?? "The recommendation could not be completed.", response.status, payload?.detail?.code ?? "unknown_error", payload?.detail);
   }
   return response.json() as Promise<T>;
 }
@@ -145,6 +147,36 @@ export type CurrentSquadRequest = {
 
 export type DemoSquad = { squad: CurrentSquadRequest; players: ApiPlayer[] };
 
+export type FreeQuestionQuota = {
+  gameweek_id: number;
+  gameweek_name: string;
+  deadline_time: string;
+  limit: number;
+  used: number;
+  remaining: number;
+};
+
+export type ConversationOutcome =
+  | "recommendation"
+  | "already_owned"
+  | "position_mismatch"
+  | "target_unavailable"
+  | "target_illegal"
+  | "target_not_found"
+  | "target_required"
+  | "selling_price_required";
+
+export type ConversationResponse = {
+  assistant_message: string;
+  outcome: ConversationOutcome;
+  target: ApiPlayer | null;
+  suggested_outgoing: ApiPlayer | null;
+  result: RecommendationResult | null;
+  provider: string;
+  model: string;
+  quota: FreeQuestionQuota;
+};
+
 export function loadDemoSquad(signal?: AbortSignal): Promise<DemoSquad> {
   return request<DemoSquad>("/v1/demo/squad", signal);
 }
@@ -153,6 +185,29 @@ export function recommendTransfer(input: { squad: CurrentSquadRequest; outgoing_
   return post<RecommendationResult>("/v1/recommendations/transfers", input, signal);
 }
 
-export function askGafferTalk(input: { squad: CurrentSquadRequest; outgoing_player_id: number; outgoing_selling_price_tenths: number; question: string }, signal?: AbortSignal): Promise<{ assistant_message: string; result: RecommendationResult; provider: string; model: string }> {
-  return post("/v1/recommendations/conversation", input, signal);
+export function loadFreeUsage(clientId: string, signal?: AbortSignal): Promise<FreeQuestionQuota> {
+  return requestWithHeaders<FreeQuestionQuota>("/v1/free/usage", { "X-GafferTalk-Client-ID": clientId }, signal);
+}
+
+async function requestWithHeaders<T>(path: string, headers: HeadersInit, signal?: AbortSignal): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl()}${path}`, { signal, headers: { Accept: "application/json", ...headers } });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new CurrentTeamApiError("GafferTalk could not reach the recommendation service.", 0, "network_error");
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { code?: string; message?: string } } | null;
+    throw new CurrentTeamApiError(payload?.detail?.message ?? "Free usage could not be loaded.", response.status, payload?.detail?.code ?? "unknown_error", payload?.detail);
+  }
+  return response.json() as Promise<T>;
+}
+
+export type ConversationRequest =
+  | { squad: CurrentSquadRequest; selection_mode: "selected"; outgoing_player_id: number; outgoing_selling_price_tenths: number; question: string }
+  | { squad: CurrentSquadRequest; selection_mode: "auto"; question: string };
+
+export function askGafferTalk(input: ConversationRequest, clientId: string, signal?: AbortSignal): Promise<ConversationResponse> {
+  return post("/v1/recommendations/conversation", input, signal, { "X-GafferTalk-Client-ID": clientId });
 }
