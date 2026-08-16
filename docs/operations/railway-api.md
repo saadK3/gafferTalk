@@ -65,7 +65,8 @@ ephemeral application storage.
    successful Groq-backed recommendation.
 8. Restart/redeploy the service and confirm the quota count persisted.
 9. Configure the Cloudflare staging build with
-   `NEXT_PUBLIC_API_BASE_URL=https://<railway-domain>` and test the browser flow.
+   `NEXT_PUBLIC_API_BASE_URL=https://<railway-domain>` and
+   `NEXT_PUBLIC_APP_HOST=app.gaffertalk.com`, then test the browser flow.
 10. Inspect Railway logs for secrets, stack traces, upstream errors and CORS
     failures before inviting testers.
 
@@ -95,5 +96,5 @@ as a routine rollback step.
 Do not point the public Free experience at this API until issue #16 validates a
 real finalized squad after the 2026/27 Gameweek 1 deadline. Only after that test
 should `GAFFERTALK_ENVIRONMENT` become `production`, CORS be restricted to
-`https://gaffertalk.com` (and any intentional canonical alias), and
+the intentional HTTPS web origins, and
 `api.gaffertalk.com` be connected.
