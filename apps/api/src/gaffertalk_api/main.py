@@ -1,7 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path as FilePath
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -39,7 +38,10 @@ from gaffertalk_api.services.free_question_usage import (
 )
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
 from gaffertalk_api.services.recommendation_loader import RecommendationLoader
-from gaffertalk_api.services.synthetic_squad import load_synthetic_squad
+from gaffertalk_api.services.synthetic_squad import (
+    DEFAULT_SYNTHETIC_SQUAD_PATH,
+    load_synthetic_squad,
+)
 from gaffertalk_api.services.team_loader import TeamLoader
 
 
@@ -55,9 +57,6 @@ class PlayerSearchResponse(BaseModel):
 
 
 settings = get_settings()
-SYNTHETIC_SQUAD_PATH = (
-    FilePath(__file__).parents[4] / "tests/fixtures/recommendations/synthetic-squad.json"
-)
 
 
 @asynccontextmanager
@@ -433,7 +432,7 @@ async def get_demo_squad(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     catalogue = await loader.load()
-    definition, snapshot, state = load_synthetic_squad(SYNTHETIC_SQUAD_PATH, catalogue)
+    definition, snapshot, state = load_synthetic_squad(DEFAULT_SYNTHETIC_SQUAD_PATH, catalogue)
     assert state.bank is not None and state.free_transfers is not None
     return DemoSquadResponse(
         squad=CurrentSquadInput(

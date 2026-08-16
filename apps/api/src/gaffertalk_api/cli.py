@@ -4,7 +4,6 @@ import json
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from gaffertalk_api.config import get_settings
@@ -14,13 +13,14 @@ from gaffertalk_api.domain.recommendations import RecommendationResult
 from gaffertalk_api.integrations.fpl.client import FplClient
 from gaffertalk_api.integrations.fpl.mapper import map_catalogue, map_fixtures
 from gaffertalk_api.services.one_player_recommendations import OnePlayerRecommendationService
-from gaffertalk_api.services.synthetic_squad import load_synthetic_squad
+from gaffertalk_api.services.synthetic_squad import (
+    DEFAULT_SYNTHETIC_SQUAD_PATH,
+    load_synthetic_squad,
+)
 from gaffertalk_api.services.team_loader import TeamLoader
 
 PAKISTAN_TIME = ZoneInfo("Asia/Karachi")
-DEFAULT_SYNTHETIC_SQUAD = (
-    Path(__file__).parents[4] / "tests/fixtures/recommendations/synthetic-squad.json"
-)
+DEFAULT_SYNTHETIC_SQUAD = DEFAULT_SYNTHETIC_SQUAD_PATH
 
 
 def build_parser() -> argparse.ArgumentParser:

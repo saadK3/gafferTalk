@@ -81,8 +81,8 @@ make recommend-one OUT=Yates
 
 The command loads current players, prices, availability and fixtures from FPL,
 then prints three ranked legal replacements with their score, remaining bank,
-reasons and trade-offs. The synthetic test squad is stored at
-`tests/fixtures/recommendations/synthetic-squad.json`. Before Gameweek 1, the
+reasons and trade-offs. The versioned demo squad ships with the API at
+`apps/api/src/gaffertalk_api/data/synthetic-squad.json`. Before Gameweek 1, the
 official performance totals are treated explicitly as a previous-season
 baseline rather than current form.
 

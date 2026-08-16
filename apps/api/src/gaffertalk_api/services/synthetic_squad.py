@@ -13,6 +13,10 @@ from gaffertalk_api.domain.models import (
 )
 from gaffertalk_api.domain.transfers import TransferPlanningState
 
+DEFAULT_SYNTHETIC_SQUAD_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "synthetic-squad.json"
+)
+
 
 class SyntheticPlayerSelector(BaseModel):
     model_config = ConfigDict(extra="forbid")
