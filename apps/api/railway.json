@@ -4,7 +4,7 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "startCommand": "uvicorn gaffertalk_api.main:app --host 0.0.0.0 --port $PORT",
+    "startCommand": "python -m uvicorn gaffertalk_api.main:app --app-dir src --host 0.0.0.0 --port $PORT",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
