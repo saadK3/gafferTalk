@@ -52,6 +52,14 @@ function money(tenths: number) {
   return `£${(tenths / 10).toFixed(1)}m`;
 }
 
+function retrievedAt(value: string) {
+  return `${new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(value))} UTC`;
+}
+
 function defaultPlayer(nextPlayers: ApiPlayer[]): ApiPlayer {
   return (
     nextPlayers.find((player) => player.web_name === "Yates") ??
@@ -432,7 +440,10 @@ export function RecommendationExperience() {
             </div>
             <details className={styles.assumptions}>
               <summary>How this shortlist was calculated</summary>
-              <ul>{result.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul>
+              <ul>
+                <li>FPL data retrieved {retrievedAt(result.data_retrieved_at)}.</li>
+                {result.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
+              </ul>
             </details>
             <p className={styles.disclaimer}>Adding a move updates this browser only. GafferTalk never changes your official FPL team.</p>
           </>

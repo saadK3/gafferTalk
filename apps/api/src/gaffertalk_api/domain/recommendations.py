@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import Field, model_validator
@@ -65,6 +66,7 @@ class TransferRecommendation(DomainModel):
 
 class RecommendationResult(DomainModel):
     squad_name: str
+    data_retrieved_at: datetime
     outgoing: Player
     strategy: RecommendationStrategy
     score_weights: ScoreWeights
