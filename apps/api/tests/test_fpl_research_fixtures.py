@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from gaffertalk_api.integrations.fpl.schemas import FplEntry, FplPicks
+
 FIXTURE_DIRECTORY = Path(__file__).parents[3] / "tests" / "fixtures" / "fpl"
 FORBIDDEN_MANAGER_FIELDS = {
     "player_first_name",
@@ -24,10 +26,11 @@ def test_all_research_fixtures_are_valid_json() -> None:
 
 
 def test_entry_fixture_excludes_manager_identity() -> None:
-    entry = load_fixture(FIXTURE_DIRECTORY / "entry.sample.json")
+    for fixture_name in ("entry.sample.json", "entry-post-deadline.sample.json"):
+        entry = load_fixture(FIXTURE_DIRECTORY / fixture_name)
 
-    assert FORBIDDEN_MANAGER_FIELDS.isdisjoint(entry)
-    assert entry["name"] == "Example Entry"
+        assert FORBIDDEN_MANAGER_FIELDS.isdisjoint(entry)
+        assert entry["name"] == "Example Entry"
 
 
 def test_money_and_rules_use_observed_integer_units() -> None:
@@ -46,3 +49,20 @@ def test_pre_deadline_picks_are_explicitly_unavailable() -> None:
     response = load_fixture(FIXTURE_DIRECTORY / "picks-unavailable.json")
 
     assert response == {"detail": "Not found."}
+
+
+def test_post_deadline_picks_match_the_observed_contract() -> None:
+    entry = FplEntry.model_validate(
+        load_fixture(FIXTURE_DIRECTORY / "entry-post-deadline.sample.json")
+    )
+    picks_payload = load_fixture(FIXTURE_DIRECTORY / "picks.sample.json")
+    picks = FplPicks.model_validate(picks_payload)
+
+    assert len(picks.picks) == 15
+    assert [pick.position for pick in picks.picks] == list(range(1, 16))
+    assert sum(pick.is_captain for pick in picks.picks) == 1
+    assert sum(pick.is_vice_captain for pick in picks.picks) == 1
+    assert entry.last_deadline_bank == picks.entry_history.bank
+    assert entry.last_deadline_value == picks.entry_history.value
+    assert all("purchase_price" not in pick for pick in picks_payload["picks"])
+    assert all("selling_price" not in pick for pick in picks_payload["picks"])

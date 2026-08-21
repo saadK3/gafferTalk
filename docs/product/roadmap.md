@@ -154,9 +154,14 @@ Implemented before the GW1 deadline:
 
 ## Post-GW1 launch gate
 
-Development can continue with the synthetic squad, but public launch remains
-blocked until issue #16 verifies the real 2026/27 data after the GW1 deadline.
-The launch gate is satisfied only when:
+An initial post-deadline observation on August 22 confirmed the successful
+2026/27 picks schema, 15-player squad shape, captaincy fields, absence of public
+selling prices, and synchronization of finalized bank/value fields. Sanitized
+contract fixtures now cover that response.
+
+Public launch remains blocked until issue #16 completes transfer-release timing
+validation and the broader real-squad journey below. The launch gate is
+satisfied only when:
 
 1. At least three real Team IDs load the correct 15-player GW1 squad.
 2. Captain, vice-captain, bench order, bank and squad value match FPL.
