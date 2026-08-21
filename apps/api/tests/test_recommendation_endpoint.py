@@ -41,6 +41,7 @@ class StubRecommendationLoader:
         )
         return RecommendationResult(
             squad_name=request.squad.name,
+            data_retrieved_at=datetime(2026, 8, 22, 12, 0, tzinfo=UTC),
             outgoing=player,
             strategy=request.strategy,
             score_weights=STRATEGY_WEIGHTS[request.strategy],
@@ -176,6 +177,7 @@ async def test_transfer_recommendation_endpoint_contract() -> None:
     assert response.json()["outgoing"]["id"] == 8
     assert response.json()["strategy"] == RecommendationStrategy.FIXTURE_FIRST
     assert response.json()["score_weights"]["upcoming_fixtures"] == 0.6
+    assert response.json()["data_retrieved_at"] == "2026-08-22T12:00:00Z"
 
 
 @pytest.mark.anyio

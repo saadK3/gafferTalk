@@ -83,6 +83,7 @@ class OnePlayerRecommendationService:
         if not legal_candidates:
             return RecommendationResult(
                 squad_name=squad_name,
+                data_retrieved_at=catalogue.retrieved_at,
                 outgoing=outgoing,
                 strategy=strategy,
                 score_weights=weights,
@@ -161,6 +162,7 @@ class OnePlayerRecommendationService:
         )
         return RecommendationResult(
             squad_name=squad_name,
+            data_retrieved_at=catalogue.retrieved_at,
             outgoing=outgoing,
             strategy=strategy,
             score_weights=weights,
