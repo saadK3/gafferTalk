@@ -126,6 +126,7 @@ export type RecommendationStrategy = "balanced" | "fixture_first" | "value_first
 
 export type RecommendationResult = {
   squad_name: string;
+  data_retrieved_at: string;
   outgoing: ApiPlayer;
   strategy: RecommendationStrategy;
   score_weights: {

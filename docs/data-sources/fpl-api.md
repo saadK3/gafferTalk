@@ -1,7 +1,7 @@
 # FPL API data availability
 
-Status: observed against the live 2026/27 service on 2026-08-12 (Asia/Karachi),
-before the Gameweek 1 deadline.
+Status: observed against the live 2026/27 service on 2026-08-12 before the
+Gameweek 1 deadline and on 2026-08-22 after the deadline (Asia/Karachi).
 
 ## Decision summary
 
@@ -70,7 +70,7 @@ before public hosting. This research establishes technical availability only.
 | `/entry/{team_id}/` | 200 for valid ID | Yes | Public manager metadata, rank/points and last-deadline bank/value | Minimize PII; snapshot metadata only |
 | `/entry/{team_id}/history/` | 200 | Yes | Past seasons, finalized Gameweek history and chip usage | Historical snapshot; no live free-transfer count |
 | `/entry/{team_id}/transfers/` | 200, empty pre-GW1 | Yes | Public transfers when released | Do not assume pre-deadline visibility |
-| `/entry/{team_id}/event/{gw}/picks/` | 404 before GW1 deadline | Yes after applicable deadline, to be revalidated | Deadline-finalized picks and entry history | Never call it the live squad |
+| `/entry/{team_id}/event/{gw}/picks/` | 404 before GW1; 200 after its deadline | Yes after applicable deadline | Deadline-finalized picks and entry history | Never call it the live squad |
 | `/my-team/{team_id}/` | 403 without credentials | No | Live squad and private transfer state | Explicitly unsupported; never request FPL credentials |
 | `/me/` | 200 with `player: null` anonymously | Partially | Logged-in profile only when authenticated | Not needed |
 
@@ -121,7 +121,7 @@ they cannot be assumed ready for an opening-week projection model.
 | Injury/status/news | Observed but incomplete | FPL fields are useful signals, not a starting guarantee |
 | Expected minutes or xPts | Derived | Must be produced and versioned by GafferTalk or another licensed source |
 
-## Deadline behavior and required revalidation
+## Deadline behavior and post-GW1 revalidation
 
 Observed before Gameweek 1:
 
@@ -132,16 +132,32 @@ Observed before Gameweek 1:
 - `/entry/{valid_team_id}/transfers/` returned an empty array.
 - `/my-team/{valid_team_id}/` returned 403 without authentication.
 
+Observed on 2026-08-22 after the Gameweek 1 deadline:
+
+- `/entry/{valid_team_id}/event/1/picks/` returned 200 with `active_chip`,
+  `automatic_subs`, `entry_history` and exactly 15 `picks`.
+- Each pick exposed `element`, `element_type`, `position`, `multiplier`,
+  `is_captain` and `is_vice_captain`.
+- Picks did not expose purchase prices or private selling prices.
+- `entry_history.bank` and `entry_history.value` matched the public entry's
+  `last_deadline_bank` and `last_deadline_value` in the observed response.
+- The successful picks response was public at the first recorded post-deadline
+  observation. The exact release minute was not monitored and is therefore not
+  claimed.
+- `/entry/{valid_team_id}/transfers/` returned an empty public array during the
+  open Gameweek 2 transfer window. An empty response cannot distinguish a
+  manager with no transfer from a transfer withheld until the next deadline.
+
 The following assumptions are intentionally **not** marked verified yet:
 
-- The exact public picks schema for 2026/27
-- When picks and transfers become public relative to each deadline
-- Whether public transfers reveal moves during an active transfer window
-- Whether last-deadline bank/value update atomically with picks
+- The exact release minute for picks relative to a deadline
+- When newly made public transfers become visible relative to the next deadline
 - Blank, double, or rescheduled Gameweek behavior
 
-Create a follow-up revalidation task immediately after the Gameweek 1 deadline.
-Until then, adapters must treat the picks schema and release timing as provisional.
+The successful picks shape is now covered by a sanitized contract fixture. The
+transfer-release timing must be checked again immediately after the Gameweek 2
+deadline using a manager known to have made a transfer, without retaining
+manager identity or an unsanitized response.
 
 ## Caching, browser access, and throttling
 

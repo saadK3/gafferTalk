@@ -154,6 +154,7 @@ def test_recommendations_are_ranked_and_illegal_candidates_are_removed() -> None
     assert result.recommendations[0].remaining_bank == Money(tenths=0)
     assert result.recommendations[0].free_transfers_after == 0
     assert result.recommendations[0].points_hit == 0
+    assert result.data_retrieved_at == NOW
     assert all(item.incoming.position is outgoing.position for item in result.recommendations)
     assert "loaded live from FPL" in result.assumptions[0]
 
