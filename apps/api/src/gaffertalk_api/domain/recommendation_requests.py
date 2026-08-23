@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -61,6 +62,42 @@ class SquadActionResearchRequest(DomainModel):
             raise ValueError("selling prices may only reference players in the confirmed squad")
         if any(price < 0 or price > 300 for price in self.selling_prices_tenths.values()):
             raise ValueError("every selling price must be between £0.0m and £30.0m")
+        return self
+
+
+class RouteResearchRequest(DomainModel):
+    squad: CurrentSquadInput
+    target_player_id: int = Field(gt=0)
+    preserved_player_ids: tuple[int, ...] = Field(default=(), max_length=15)
+    excluded_player_ids: tuple[int, ...] = Field(default=(), max_length=15)
+    minimum_remaining_bank_tenths: int = Field(default=0, ge=0, le=200)
+    maximum_transfers: Literal[1, 2] = 2
+    selling_prices_tenths: dict[int, int] = Field(default_factory=dict)
+    purchase_prices_tenths: dict[int, int] = Field(default_factory=dict)
+    risk_preference: RiskPreference = RiskPreference.BALANCED
+    proceed_if_discouraged: bool = False
+    question: str = Field(min_length=3, max_length=500)
+
+    @model_validator(mode="after")
+    def valid_route_constraints(self) -> "RouteResearchRequest":
+        squad_ids = set(self.squad.player_ids)
+        preserved = set(self.preserved_player_ids)
+        excluded = set(self.excluded_player_ids)
+        if len(preserved) != len(self.preserved_player_ids):
+            raise ValueError("preserved players must be unique")
+        if len(excluded) != len(self.excluded_player_ids):
+            raise ValueError("excluded players must be unique")
+        if not preserved.issubset(squad_ids):
+            raise ValueError("preserved players must belong to the confirmed squad")
+        if preserved & excluded:
+            raise ValueError("a player cannot be both preserved and excluded")
+        if not set(self.selling_prices_tenths).issubset(squad_ids):
+            raise ValueError("selling prices may only reference players in the squad")
+        if not set(self.purchase_prices_tenths).issubset(squad_ids):
+            raise ValueError("purchase prices may only reference players in the squad")
+        prices = (*self.selling_prices_tenths.values(), *self.purchase_prices_tenths.values())
+        if any(price < 0 or price > 300 for price in prices):
+            raise ValueError("route prices must be between £0.0m and £30.0m")
         return self
 
 

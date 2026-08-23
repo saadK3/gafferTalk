@@ -13,6 +13,11 @@ from gaffertalk_api.domain.pro_research import (
     SquadActionReport,
     SquadActionStatus,
 )
+from gaffertalk_api.domain.route_research import (
+    RouteResearchReport,
+    RouteSearchStatus,
+    RouteVerdict,
+)
 from gaffertalk_api.integrations.llm.groq import GroqConversationClient
 
 
@@ -273,5 +278,133 @@ async def test_squad_action_synthesis_rejects_changed_action() -> None:
     try:
         with pytest.raises(ValueError, match="changed"):
             await client.synthesize_squad_action_report("Should I roll?", squad_action_report())
+    finally:
+        await http_client.aclose()
+
+
+def route_report() -> RouteResearchReport:
+    return RouteResearchReport.model_construct(
+        status=RouteSearchStatus.NEEDS_SELLING_PRICES,
+        verdict=RouteVerdict.RECOMMENDED,
+        grounded_reasons=(
+            GroundedReason(
+                id="route",
+                text="Confirm Enzo and João Pedro selling prices before route validation.",
+            ),
+            GroundedReason(
+                id="strategy",
+                text="The optimistic route clears the balanced threshold.",
+            ),
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_route_synthesis_preserves_status_verdict_and_reason_boundary() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        supplied = json.loads(json.loads(request.content)["messages"][1]["content"])
+        assert supplied["status"] == "needs_selling_prices"
+        assert supplied["verdict"] == "recommended"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "status": "needs_selling_prices",
+                                    "verdict": "recommended",
+                                    "reason_ids": ["strategy"],
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        answer = await client.synthesize_route_report("How do I get Haaland?", route_report())
+    finally:
+        await http_client.aclose()
+
+    assert answer.startswith("Confirm Enzo and João Pedro")
+    assert answer.endswith("balanced threshold.")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {
+            "status": "route",
+            "verdict": "recommended",
+            "reason_ids": ["route"],
+        },
+        {
+            "status": "needs_selling_prices",
+            "verdict": "discouraged",
+            "reason_ids": ["route"],
+        },
+        {
+            "status": "needs_selling_prices",
+            "verdict": "recommended",
+            "reason_ids": ["invented_player"],
+        },
+        {
+            "status": "needs_selling_prices",
+            "verdict": "recommended",
+            "reason_ids": ["invented_price"],
+        },
+        {
+            "status": "needs_selling_prices",
+            "verdict": "recommended",
+            "reason_ids": ["invented_statistic"],
+        },
+        {
+            "status": "needs_selling_prices",
+            "verdict": "recommended",
+            "reason_ids": ["invented_fixture"],
+        },
+        {
+            "status": "needs_selling_prices",
+            "verdict": "recommended",
+            "reason_ids": ["invented_route"],
+        },
+    ],
+)
+async def test_route_synthesis_rejects_changed_or_invented_results(
+    selection: dict[str, object],
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(selection)}}]},
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        with pytest.raises(ValueError, match="changed|absent"):
+            await client.synthesize_route_report("How do I get Haaland?", route_report())
     finally:
         await http_client.aclose()

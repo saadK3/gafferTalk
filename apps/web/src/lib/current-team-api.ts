@@ -381,3 +381,85 @@ export function researchSquadAction(
 ): Promise<SquadActionResearchResponse> {
   return post("/v1/pro/research/squad-action", input, signal);
 }
+
+export type RouteTransfer = {
+  outgoing: ApiPlayer;
+  incoming: ApiPlayer;
+  confirmed_selling_price: ApiMoney | null;
+};
+
+export type TransferRouteCandidate = {
+  transfers: RouteTransfer[];
+  budget_status: "optimistic" | "exact";
+  evidence_gain: number;
+  policy_adjusted_gain: number;
+  remaining_bank: ApiMoney;
+  free_transfers_used: number;
+  free_transfers_after: number;
+  points_hit: number;
+  resulting_player_ids: number[];
+  explanation: string;
+};
+
+export type RouteResearchReport = {
+  schema_version: "1.0";
+  decision_policy_version: "1.0";
+  squad_name: string;
+  created_at: string;
+  data_retrieved_at: string;
+  risk_preference: RiskPreference;
+  target: ApiPlayer;
+  constraints: {
+    preserved_players: ApiPlayer[];
+    excluded_players: ApiPlayer[];
+    minimum_remaining_bank: ApiMoney;
+    maximum_transfers: 1 | 2;
+  };
+  status: "needs_selling_prices" | "route" | "no_legal_route";
+  verdict: "recommended" | "discouraged" | "no_route";
+  manager_override: boolean;
+  recommended_route: TransferRouteCandidate | null;
+  provisional_route: TransferRouteCandidate | null;
+  requested_selling_prices_for: ApiPlayer[];
+  alternatives: TransferRouteCandidate[];
+  strategic_explanation: string;
+  opportunity_cost: string;
+  confidence: {
+    level: "high" | "medium" | "low";
+    policy_version: "1.0";
+    reasons: string[];
+  };
+  evidence: ProPlayerEvidence[];
+  assumptions: string[];
+  search_stats: {
+    routes_examined: number;
+    optimistic_routes: number;
+    candidate_limit_per_position: number;
+    elapsed_milliseconds: number;
+  };
+};
+
+export type RouteResearchResponse = {
+  report: RouteResearchReport;
+  assistant_message: string;
+  provider: string;
+  model: string;
+};
+
+export function researchRoute(
+  input: {
+    squad: CurrentSquadRequest;
+    target_player_id: number;
+    preserved_player_ids: number[];
+    excluded_player_ids: number[];
+    minimum_remaining_bank_tenths: number;
+    maximum_transfers: 1 | 2;
+    selling_prices_tenths: Record<number, number>;
+    risk_preference: RiskPreference;
+    proceed_if_discouraged: boolean;
+    question: string;
+  },
+  signal?: AbortSignal,
+): Promise<RouteResearchResponse> {
+  return post("/v1/pro/research/route", input, signal);
+}

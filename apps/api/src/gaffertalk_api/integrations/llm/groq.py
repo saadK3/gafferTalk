@@ -12,6 +12,7 @@ from gaffertalk_api.domain.pro_research import (
     SquadActionSynthesisSelection,
 )
 from gaffertalk_api.domain.recommendations import RecommendationResult
+from gaffertalk_api.domain.route_research import RouteResearchReport, RouteSynthesisSelection
 
 
 class GroqConversationClient:
@@ -177,6 +178,41 @@ class GroqConversationClient:
         if action_text is None:
             raise ValueError("Squad-action report is missing its approved action reason")
         return f"{action_text} {detail}".strip()
+
+    async def synthesize_route_report(self, question: str, report: RouteResearchReport) -> str:
+        """Render a route summary using only deterministic approved reasons."""
+
+        reasons = {reason.id: reason.text for reason in report.grounded_reasons}
+        content = await self._completion(
+            system=(
+                "Select emphasis for a deterministic FPL route report. Return JSON only with "
+                "the exact supplied status, exact supplied verdict and one to three reason_ids "
+                "copied from available_reason_ids. Do not return prose, players, statistics, "
+                "prices, fixtures or transfer routes."
+            ),
+            user=json.dumps(
+                {
+                    "question": question,
+                    "status": report.status,
+                    "verdict": report.verdict,
+                    "available_reason_ids": list(reasons),
+                }
+            ),
+        )
+        try:
+            selection = RouteSynthesisSelection.model_validate_json(content)
+        except ValidationError as error:
+            raise ValueError("Groq returned an invalid route synthesis") from error
+        if selection.status is not report.status or selection.verdict is not report.verdict:
+            raise ValueError("Groq changed the deterministic route result")
+        if len(set(selection.reason_ids)) != len(selection.reason_ids):
+            raise ValueError("Groq repeated a route synthesis reason")
+        if set(selection.reason_ids) - set(reasons):
+            raise ValueError("Groq selected a reason absent from the route report")
+        selected = [reasons[reason_id] for reason_id in selection.reason_ids]
+        if "route" not in selection.reason_ids:
+            selected.insert(0, reasons["route"])
+        return " ".join(dict.fromkeys(selected))
 
     async def _completion(self, *, system: str, user: str, json_mode: bool = True) -> str:
         payload: dict[str, object] = {

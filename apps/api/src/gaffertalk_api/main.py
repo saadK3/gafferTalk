@@ -31,10 +31,12 @@ from gaffertalk_api.domain.recommendation_requests import (
     FreeQuestionQuota,
     NamedTransferResearchRequest,
     OutgoingSelectionMode,
+    RouteResearchRequest,
     SquadActionResearchRequest,
     TransferRecommendationRequest,
 )
 from gaffertalk_api.domain.recommendations import RecommendationResult
+from gaffertalk_api.domain.route_research import RouteResearchResponse
 from gaffertalk_api.integrations.fpl.client import FplClient
 from gaffertalk_api.integrations.llm.groq import GroqConversationClient
 from gaffertalk_api.services.conversation_preflight import ConversationPreflightService
@@ -377,6 +379,64 @@ async def research_squad_action(
             detail={"code": "pro_research_unavailable", "message": "Groq is unavailable."},
         ) from error
     return SquadActionResearchResponse(
+        report=report,
+        assistant_message=assistant_message,
+        provider="groq",
+        model=groq.model,
+    )
+
+
+@app.post(
+    "/v1/pro/research/route",
+    response_model=RouteResearchResponse,
+    tags=["Pro research"],
+)
+async def research_route(
+    request: RouteResearchRequest,
+    http_request: Request,
+    loader: Annotated[ProResearchLoader, Depends(get_pro_research_loader)],
+) -> RouteResearchResponse:
+    """Find and rank exact one- or two-transfer routes to a named target."""
+
+    groq: GroqConversationClient | None = http_request.app.state.groq_client
+    if groq is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "pro_research_unconfigured",
+                "message": "Pro research needs a configured Groq API key.",
+            },
+        )
+    try:
+        report = await loader.route(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_pro_route_state", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    try:
+        assistant_message = await groq.synthesize_route_report(request.question, report)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "pro_grounding_rejected",
+                "message": "The route summary failed its grounding check.",
+            },
+        ) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "pro_research_unavailable", "message": "Groq is unavailable."},
+        ) from error
+    return RouteResearchResponse(
         report=report,
         assistant_message=assistant_message,
         provider="groq",
