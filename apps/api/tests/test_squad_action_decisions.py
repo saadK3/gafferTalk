@@ -113,6 +113,15 @@ def test_one_confirmed_price_turns_preliminary_route_into_legal_transfer() -> No
     assert preliminary.status is SquadActionStatus.NEEDS_SELLING_PRICE
     assert preliminary.requested_selling_price_for is not None
     outgoing = preliminary.requested_selling_price_for
+    provisional_routes = [
+        candidate
+        for candidate in preliminary.compared_actions
+        if candidate.outgoing is not None
+        and candidate.incoming is not None
+        and candidate.outgoing.id == preliminary.provisional_action.outgoing.id
+        and candidate.incoming.id == preliminary.provisional_action.incoming.id
+    ]
+    assert len(provisional_routes) == 1
 
     final = run_report(
         confirmed_prices={outgoing.id: outgoing.current_price.tenths},
