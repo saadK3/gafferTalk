@@ -13,10 +13,12 @@ from gaffertalk_api.config import get_settings
 from gaffertalk_api.domain.errors import (
     InvalidTeamIdError,
     InvalidUpstreamFplResponseError,
+    UpstreamFplNotFoundError,
     UpstreamFplTimeoutError,
     UpstreamFplUnavailableError,
 )
 from gaffertalk_api.domain.models import Player, Position, SquadLookupResult
+from gaffertalk_api.domain.pro_research import NamedTransferResearchResponse
 from gaffertalk_api.domain.recommendation_requests import (
     ConversationalRecommendationRequest,
     ConversationalRecommendationResponse,
@@ -24,6 +26,7 @@ from gaffertalk_api.domain.recommendation_requests import (
     CurrentSquadInput,
     DemoSquadResponse,
     FreeQuestionQuota,
+    NamedTransferResearchRequest,
     OutgoingSelectionMode,
     TransferRecommendationRequest,
 )
@@ -37,6 +40,7 @@ from gaffertalk_api.services.free_question_usage import (
     select_quota_gameweek,
 )
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
+from gaffertalk_api.services.pro_research_loader import ProResearchLoader
 from gaffertalk_api.services.recommendation_loader import RecommendationLoader
 from gaffertalk_api.services.synthetic_squad import (
     DEFAULT_SYNTHETIC_SQUAD_PATH,
@@ -69,6 +73,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.team_loader = TeamLoader(client)
     application.state.player_catalogue = PlayerCatalogueLoader(client)
     application.state.recommendation_loader = RecommendationLoader(client)
+    application.state.pro_research_loader = ProResearchLoader(client)
     application.state.free_usage = FreeQuestionUsageStore(
         settings.free_usage_database_path,
         settings.free_question_limit,
@@ -131,6 +136,10 @@ def get_recommendation_loader(request: Request) -> RecommendationLoader:
     return request.app.state.recommendation_loader
 
 
+def get_pro_research_loader(request: Request) -> ProResearchLoader:
+    return request.app.state.pro_research_loader
+
+
 def get_free_usage(request: Request) -> FreeQuestionUsageStore:
     return request.app.state.free_usage
 
@@ -157,6 +166,14 @@ def upstream_http_exception(error: Exception) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "invalid_upstream_response", "message": str(error)},
+        )
+    if isinstance(error, UpstreamFplNotFoundError):
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "upstream_evidence_missing",
+                "message": "FPL did not provide required player evidence.",
+            },
         )
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -245,6 +262,64 @@ async def recommend_transfer(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "invalid_recommendation_state", "message": str(error)},
         ) from error
+
+
+@app.post(
+    "/v1/pro/research/named-transfer",
+    response_model=NamedTransferResearchResponse,
+    tags=["Pro research"],
+)
+async def research_named_transfer(
+    request: NamedTransferResearchRequest,
+    http_request: Request,
+    loader: Annotated[ProResearchLoader, Depends(get_pro_research_loader)],
+) -> NamedTransferResearchResponse:
+    """Compare a requested one-player move with holding, waiting and alternatives."""
+
+    groq: GroqConversationClient | None = http_request.app.state.groq_client
+    if groq is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "pro_research_unconfigured",
+                "message": "Pro research needs a configured Groq API key.",
+            },
+        )
+    try:
+        report = await loader.named_transfer(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_pro_research_state", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    try:
+        assistant_message = await groq.synthesize_pro_report(request.question, report)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "pro_grounding_rejected",
+                "message": "The research summary failed its grounding check.",
+            },
+        ) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "pro_research_unavailable", "message": "Groq is unavailable."},
+        ) from error
+    return NamedTransferResearchResponse(
+        report=report,
+        assistant_message=assistant_message,
+        provider="groq",
+        model=groq.model,
+    )
 
 
 @app.post(

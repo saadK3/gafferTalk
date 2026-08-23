@@ -212,3 +212,97 @@ export type ConversationRequest =
 export function askGafferTalk(input: ConversationRequest, clientId: string, signal?: AbortSignal): Promise<ConversationResponse> {
   return post("/v1/recommendations/conversation", input, signal, { "X-GafferTalk-Client-ID": clientId });
 }
+
+export type ProVerdict = "buy" | "hold" | "wait" | "avoid";
+
+export type ProEvidenceMetric = {
+  key: string;
+  label: string;
+  value: number;
+  display_value: string;
+  provenance: "observed" | "derived" | "user_supplied" | "unavailable";
+  source: string;
+};
+
+export type ProPlayerEvidence = {
+  player: ApiPlayer;
+  metrics: ProEvidenceMetric[];
+  next_five: {
+    difficulties: number[];
+    average_difficulty: number | null;
+    fixtures_considered: number;
+  };
+  next_three: {
+    difficulties: number[];
+    average_difficulty: number | null;
+    fixtures_considered: number;
+  };
+  recent_gameweeks: number[];
+  evidence_score: number;
+  source_retrieved_at: string;
+};
+
+export type ProDecisionReport = {
+  schema_version: "1.0";
+  squad_name: string;
+  created_at: string;
+  data_retrieved_at: string;
+  verdict: ProVerdict;
+  recommended_action: string;
+  compared_actions: Array<"requested_transfer" | "hold" | "wait" | "alternative_transfer">;
+  requested_route: {
+    outgoing: ApiPlayer;
+    incoming: ApiPlayer;
+    remaining_bank: ApiMoney;
+    free_transfers_after: number;
+    points_hit: number;
+  };
+  case_for: string[];
+  case_against: string[];
+  best_alternative: {
+    action: "requested_transfer" | "hold" | "wait" | "alternative_transfer";
+    player: ApiPlayer | null;
+    explanation: string;
+  };
+  squad_priority: {
+    more_urgent: boolean;
+    player: ApiPlayer | null;
+    explanation: string;
+  };
+  opportunity_cost: {
+    free_transfers_used: number;
+    points_hit: number;
+    remaining_bank: ApiMoney;
+    flexibility: "strong" | "moderate" | "limited";
+    explanation: string;
+  };
+  planning_impact: string;
+  confidence: {
+    level: "high" | "medium" | "low";
+    policy_version: "1.0";
+    reasons: string[];
+  };
+  change_conditions: string[];
+  evidence: ProPlayerEvidence[];
+  assumptions: string[];
+};
+
+export type NamedTransferResearchResponse = {
+  report: ProDecisionReport;
+  assistant_message: string;
+  provider: string;
+  model: string;
+};
+
+export function researchNamedTransfer(
+  input: {
+    squad: CurrentSquadRequest;
+    outgoing_player_id: number;
+    outgoing_selling_price_tenths: number;
+    target_player_id: number;
+    question: string;
+  },
+  signal?: AbortSignal,
+): Promise<NamedTransferResearchResponse> {
+  return post("/v1/pro/research/named-transfer", input, signal);
+}

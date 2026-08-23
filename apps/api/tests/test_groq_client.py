@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from gaffertalk_api.domain.models import Club, Money, Player, Position
+from gaffertalk_api.domain.pro_research import GroundedReason, ProDecisionReport, ProVerdict
 from gaffertalk_api.integrations.llm.groq import GroqConversationClient
 
 
@@ -58,3 +59,101 @@ async def test_groq_interpretation_must_preserve_selected_player() -> None:
     assert intent.outgoing_player_id == 12
     assert intent.strategy == "fixture_first"
     assert intent.interpretation == "Prioritise easier fixtures."
+
+
+def pro_report() -> ProDecisionReport:
+    return ProDecisionReport.model_construct(
+        verdict=ProVerdict.HOLD,
+        recommended_action="Hold Bruno; the requested move does not offer a clear enough gain.",
+        grounded_reasons=(
+            GroundedReason(
+                id="strongest_case_against",
+                text="Holding Bruno preserves one transfer.",
+            ),
+            GroundedReason(
+                id="planning_impact",
+                text="The next-three fixture comparison favors holding.",
+            ),
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_pro_synthesis_can_only_select_validated_reason_ids() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        supplied = json.loads(body["messages"][1]["content"])
+        assert supplied["available_reason_ids"] == [
+            "strongest_case_against",
+            "planning_impact",
+        ]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "verdict": "hold",
+                                    "reason_ids": ["strongest_case_against"],
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        answer = await client.synthesize_pro_report("Bruno to Odegaard?", pro_report())
+    finally:
+        await http_client.aclose()
+
+    assert "Holding Bruno preserves one transfer." in answer
+    assert "If you still prefer the requested move" in answer
+
+
+@pytest.mark.anyio
+async def test_pro_synthesis_rejects_unknown_reason() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"verdict": "hold", "reason_ids": ["invented_fact"]}
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        with pytest.raises(ValueError, match="absent"):
+            await client.synthesize_pro_report("Bruno to Odegaard?", pro_report())
+    finally:
+        await http_client.aclose()

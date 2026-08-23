@@ -451,8 +451,8 @@ export function RecommendationExperience() {
       </section>
 
       <aside className={styles.proTeaser}>
-        <span>Coming later · GafferTalk Pro</span>
-        <div><strong>Plan the whole Gameweek.</strong><p>Pro will add multi-transfer routes, three-to-five Gameweek planning, saved conversations and a much larger fair-use question limit.</p></div>
+        <span>Now testing · GafferTalk Pro</span>
+        <div><strong>Challenge the transfer.</strong><p>The first Pro research slice now compares a named move with holding, waiting and a stronger legal alternative.</p><Link href="/pro">Open the Pro preview</Link></div>
       </aside>
 
       <footer className={styles.footer}><span>GafferTalk does the homework.</span><b>You make the call.</b></footer>

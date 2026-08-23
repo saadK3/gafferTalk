@@ -34,6 +34,20 @@ class TransferRecommendationRequest(DomainModel):
     target_player_id: int | None = Field(default=None, gt=0)
 
 
+class NamedTransferResearchRequest(DomainModel):
+    squad: CurrentSquadInput
+    outgoing_player_id: int = Field(gt=0)
+    outgoing_selling_price_tenths: int = Field(ge=0, le=300)
+    target_player_id: int = Field(gt=0)
+    question: str = Field(min_length=3, max_length=500)
+
+    @model_validator(mode="after")
+    def players_are_different(self) -> "NamedTransferResearchRequest":
+        if self.outgoing_player_id == self.target_player_id:
+            raise ValueError("outgoing and target players must be different")
+        return self
+
+
 class OutgoingSelectionMode(StrEnum):
     SELECTED = "selected"
     AUTO = "auto"

@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from gaffertalk_api.domain.conversation import TransferIntent
 from gaffertalk_api.domain.models import Player
+from gaffertalk_api.domain.pro_research import ProDecisionReport, ProSynthesisSelection
 from gaffertalk_api.domain.recommendations import RecommendationResult
 
 
@@ -88,6 +89,49 @@ class GroqConversationClient:
             user=json.dumps({"question": question, "engine_facts": facts}),
             json_mode=False,
         )
+
+    async def synthesize_pro_report(self, question: str, report: ProDecisionReport) -> str:
+        """Let the model select emphasis, then render only backend-approved facts."""
+
+        reasons = {reason.id: reason.text for reason in report.grounded_reasons}
+        content = await self._completion(
+            system=(
+                "You select which validated reasons should be emphasized in an FPL decision "
+                "summary. Return JSON only with the exact supplied verdict and one to three "
+                "reason_ids copied from available_reason_ids. Do not return prose, statistics, "
+                "players, prices, fixtures or transfer routes."
+            ),
+            user=json.dumps(
+                {
+                    "question": question,
+                    "verdict": report.verdict,
+                    "available_reason_ids": list(reasons),
+                }
+            ),
+        )
+        try:
+            selection = ProSynthesisSelection.model_validate_json(content)
+        except ValidationError as error:
+            raise ValueError("Groq returned an invalid Pro synthesis selection") from error
+        if selection.verdict is not report.verdict:
+            raise ValueError("Groq changed the deterministic Pro verdict")
+        if len(set(selection.reason_ids)) != len(selection.reason_ids):
+            raise ValueError("Groq repeated a Pro synthesis reason")
+        unknown = set(selection.reason_ids) - set(reasons)
+        if unknown:
+            raise ValueError("Groq selected a reason absent from the Pro report")
+        selected = [
+            reasons[reason_id]
+            for reason_id in selection.reason_ids
+            if reasons[reason_id] != report.recommended_action
+        ]
+        detail = " ".join(selected)
+        agency = (
+            " If you still prefer the requested move, the legal route in the report remains valid."
+            if report.verdict.value in {"hold", "wait", "avoid"}
+            else " Recheck the change conditions before the deadline."
+        )
+        return f"{report.recommended_action} {detail}{agency}".strip()
 
     async def _completion(self, *, system: str, user: str, json_mode: bool = True) -> str:
         payload: dict[str, object] = {

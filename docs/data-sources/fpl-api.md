@@ -102,6 +102,15 @@ fields, minutes, FPL production and several underlying metrics. These fields do
 not provide reliable expected minutes, starting probability, rotation risk,
 tactical role, or an independent future expected-points projection.
 
+Pro named-transfer research uses bootstrap totals for points, starts, minutes,
+goals, assists, bonus, expected goals, expected assists and selection
+percentage. It loads `/element-summary/{player_id}/` only for the requested
+outgoing player, target and strongest material legal alternative, then uses at
+most the latest five completed history rows. Observed values retain their FPL
+source; per-start, per-90, fixture averages, comparison scores and confidence
+are explicitly marked derived. See
+`docs/architecture/pro-named-transfer-research.md` for policy version 1.0.
+
 Pre-season team-strength fields were null or zero in the observed payload, so
 they cannot be assumed ready for an opening-week projection model.
 

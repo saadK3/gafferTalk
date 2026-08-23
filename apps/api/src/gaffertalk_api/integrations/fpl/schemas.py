@@ -52,6 +52,9 @@ class FplElement(FplSchema):
     expected_goals: float = Field(default=0, ge=0)
     expected_assists: float = Field(default=0, ge=0)
     selected_by_percent: float = Field(default=0, ge=0, le=100)
+    goals_scored: int = Field(default=0, ge=0)
+    assists: int = Field(default=0, ge=0)
+    bonus: int = Field(default=0, ge=0)
 
 
 class FplGameSettings(FplSchema):
@@ -141,7 +144,19 @@ class FplPicks(FplSchema):
     picks: list[FplPick]
 
 
+class FplElementHistory(FplSchema):
+    round: int = Field(ge=1, le=38)
+    total_points: int
+    minutes: int = Field(ge=0)
+    starts: int = Field(default=0, ge=0)
+    goals_scored: int = Field(default=0, ge=0)
+    assists: int = Field(default=0, ge=0)
+    bonus: int = Field(default=0, ge=0)
+    expected_goals: float = Field(default=0, ge=0)
+    expected_assists: float = Field(default=0, ge=0)
+
+
 class FplElementSummary(FplSchema):
     fixtures: list[dict[str, Any]]
-    history: list[dict[str, Any]]
+    history: list[FplElementHistory]
     history_past: list[dict[str, Any]]
