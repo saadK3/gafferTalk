@@ -132,6 +132,12 @@ compares one-player routes with rolling, tests exact hit cost, and exposes Safe,
 Balanced and Aggressive thresholds. See the
 [Pro whole-squad action architecture](docs/architecture/pro-squad-action-research.md).
 
+Bounded route research is available at `http://localhost:3000/pro/routes`. A
+manager can select a named target, preserve or require the sale of squad players,
+reserve bank and search at most two transfers. GafferTalk requests only the relevant
+outgoing selling prices before returning an exact route, hit and resulting bank. See
+the [Pro route-research architecture](docs/architecture/pro-route-research.md).
+
 The API is prepared for a private Railway staging service while the web
 application remains on Cloudflare. See the
 [Railway API runbook](docs/operations/railway-api.md) for the monorepo paths,

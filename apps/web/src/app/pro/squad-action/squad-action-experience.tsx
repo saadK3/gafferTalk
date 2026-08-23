@@ -126,6 +126,7 @@ export function ProSquadActionExperience() {
         <nav className={styles.modeNav} aria-label="Pro research modes">
           <Link href="/pro">Named transfer</Link>
           <Link href="/pro/squad-action" aria-current="page">Best squad action</Link>
+          <Link href="/pro/routes">Route finder</Link>
         </nav>
         <Link href="/team">Reconfirm team</Link>
       </header>
