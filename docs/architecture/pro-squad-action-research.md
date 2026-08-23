@@ -10,17 +10,28 @@ with rolling and returns a versioned report.
 ```text
 confirmed 15-player planning state
   -> /pro/squad-action
-  -> confirm all 15 selling prices and choose Safe, Balanced or Aggressive
+  -> choose Safe, Balanced or Aggressive; selling prices may initially be empty
   -> POST /v1/pro/research/squad-action
-  -> deterministic concern, legality, action, roll and hit policy
+  -> optimistic whole-squad screen using current price as a maximum sale value
+  -> final roll, or request one relevant outgoing player's selling price
+  -> deterministic legality check and final transfer/roll decision
   -> Groq selects only backend-approved reason IDs
   -> browser renders the complete structured report
 ```
 
-The request must contain the confirmed squad, bank, free transfers and a selling price
-for every owned player. Public FPL data does not expose each manager's selling prices,
-so whole-squad route enumeration fails with an actionable validation response when the
-map is incomplete or impossible.
+The request must contain the confirmed squad, bank and free transfers. Selling prices
+are optional and may be supplied incrementally. Public FPL data does not expose each
+manager's selling prices, so the first pass uses each player's current market price only
+as an optimistic upper bound. An optimistic route is never described as affordable,
+legal or final.
+
+If no optimistic route clears the selected threshold, rolling is conclusive and no
+price is requested. Otherwise, the response has `needs_selling_price` status and asks
+only for the leading route's outgoing player. That exact price is passed through the
+canonical legality service. If the route fails, the service either asks for the next
+relevant outgoing player's price or returns `insufficient_gain` and recommends rolling.
+Confirmed prices are cached for the current browser session and are reused only while
+the same 15-player squad remains selected.
 
 ## Deterministic scope
 
@@ -101,14 +112,16 @@ return a partial report.
 - No saved or reconciled multi-Gameweek plan; that belongs to #48.
 - Chips are not evaluated.
 - The policy does not claim press-conference, predicted-lineup or tactical-role data.
-- The current journey asks the manager to review all selling prices because correctness
-  takes precedence over inferring private values.
+- Selling prices remain manager-confirmed private inputs, but the journey requests them
+  progressively only for outgoing players whose routes can change the decision.
 
 ## Acceptance coverage
 
-Golden scenarios cover a clear roll, clear action, avoidable hit, justified hit, risk
-preference differences, explicit availability priority, deterministic tied priorities,
-incomplete history, stale evidence and invalid selling-price state. Endpoint and Groq
-tests cover the versioned contract, grounding rejection and provider failure. The Pro UI
-exposes the policy choice, inputs, priorities, compared actions, exact financial result,
-hit test, confidence, assumptions and change conditions.
+Golden scenarios cover a conclusive price-free roll, a preliminary route becoming an
+exact transfer after one confirmation, failure moving to the next relevant outgoing
+player, all promising routes resolving to insufficient gain, avoidable and justified
+hits, risk preferences, priority ranking, stale/incomplete evidence and invalid prices.
+Endpoint and Groq tests cover empty/partial price maps, the versioned contract, grounding
+rejection and provider failure. The Pro UI exposes preliminary versus final status, a
+focused price request, session reuse, priorities, compared actions, the exact financial
+result, hit test, confidence, assumptions and change conditions.

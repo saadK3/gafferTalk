@@ -319,6 +319,7 @@ export type SquadActionCandidate = {
   free_transfers_used: number;
   free_transfers_after: number;
   points_hit: number;
+  budget_status: "optimistic" | "exact" | "not_applicable";
   explanation: string;
 };
 
@@ -329,7 +330,10 @@ export type SquadActionReport = {
   created_at: string;
   data_retrieved_at: string;
   risk_preference: RiskPreference;
-  recommended_action: SquadActionCandidate;
+  status: "needs_selling_price" | "transfer" | "roll" | "insufficient_gain";
+  recommended_action: SquadActionCandidate | null;
+  provisional_action: SquadActionCandidate | null;
+  requested_selling_price_for: ApiPlayer | null;
   ranked_concerns: Array<{
     rank: number;
     player: ApiPlayer;

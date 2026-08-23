@@ -152,6 +152,13 @@ class SquadActionKind(StrEnum):
     ROLL = "roll"
 
 
+class SquadActionStatus(StrEnum):
+    NEEDS_SELLING_PRICE = "needs_selling_price"
+    TRANSFER = "transfer"
+    ROLL = "roll"
+    INSUFFICIENT_GAIN = "insufficient_gain"
+
+
 class ConcernKind(StrEnum):
     AVAILABILITY = "availability"
     MINUTES = "minutes"
@@ -178,6 +185,7 @@ class SquadActionCandidate(DomainModel):
     free_transfers_used: int = Field(ge=0, le=1)
     free_transfers_after: int = Field(ge=0, le=5)
     points_hit: int = Field(ge=0)
+    budget_status: Literal["optimistic", "exact", "not_applicable"]
     explanation: str = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -209,7 +217,10 @@ class SquadActionReport(DomainModel):
     created_at: datetime
     data_retrieved_at: datetime
     risk_preference: RiskPreference
-    recommended_action: SquadActionCandidate
+    status: SquadActionStatus
+    recommended_action: SquadActionCandidate | None = None
+    provisional_action: SquadActionCandidate | None = None
+    requested_selling_price_for: Player | None = None
     ranked_concerns: tuple[RankedSquadConcern, ...] = Field(min_length=1, max_length=15)
     compared_actions: tuple[SquadActionCandidate, ...] = Field(min_length=2)
     roll_threshold: float = Field(ge=0)
@@ -222,6 +233,31 @@ class SquadActionReport(DomainModel):
     assumptions: tuple[str, ...] = Field(min_length=1)
     grounded_reasons: tuple[GroundedReason, ...] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def status_matches_actions(self) -> "SquadActionReport":
+        needs_price = self.status is SquadActionStatus.NEEDS_SELLING_PRICE
+        if needs_price:
+            if (
+                self.recommended_action is not None
+                or self.provisional_action is None
+                or self.requested_selling_price_for is None
+            ):
+                raise ValueError("a preliminary report must request one selling price")
+        elif self.recommended_action is None:
+            raise ValueError("a final report must include a recommended action")
+        if self.status is SquadActionStatus.TRANSFER and (
+            self.recommended_action is None
+            or self.recommended_action.action is not SquadActionKind.TRANSFER
+            or self.recommended_action.budget_status != "exact"
+        ):
+            raise ValueError("a final transfer must be exact")
+        if self.status in {SquadActionStatus.ROLL, SquadActionStatus.INSUFFICIENT_GAIN} and (
+            self.recommended_action is None
+            or self.recommended_action.action is not SquadActionKind.ROLL
+        ):
+            raise ValueError("a roll outcome must recommend rolling")
+        return self
+
 
 class SquadActionResearchResponse(DomainModel):
     report: SquadActionReport
@@ -231,5 +267,5 @@ class SquadActionResearchResponse(DomainModel):
 
 
 class SquadActionSynthesisSelection(DomainModel):
-    action: SquadActionKind
+    status: SquadActionStatus
     reason_ids: tuple[str, ...] = Field(min_length=1, max_length=3)

@@ -51,14 +51,14 @@ class NamedTransferResearchRequest(DomainModel):
 
 class SquadActionResearchRequest(DomainModel):
     squad: CurrentSquadInput
-    selling_prices_tenths: dict[int, int]
+    selling_prices_tenths: dict[int, int] = Field(default_factory=dict)
     risk_preference: RiskPreference = RiskPreference.BALANCED
     question: str = Field(min_length=3, max_length=500)
 
     @model_validator(mode="after")
-    def complete_selling_prices(self) -> "SquadActionResearchRequest":
-        if set(self.selling_prices_tenths) != set(self.squad.player_ids):
-            raise ValueError("selling prices must cover every player in the confirmed squad")
+    def valid_selling_prices(self) -> "SquadActionResearchRequest":
+        if not set(self.selling_prices_tenths).issubset(self.squad.player_ids):
+            raise ValueError("selling prices may only reference players in the confirmed squad")
         if any(price < 0 or price > 300 for price in self.selling_prices_tenths.values()):
             raise ValueError("every selling price must be between £0.0m and £30.0m")
         return self

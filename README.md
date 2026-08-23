@@ -125,10 +125,11 @@ reason IDs; it cannot add facts or change the verdict. See the
 [Pro named-transfer architecture](docs/architecture/pro-named-transfer-research.md).
 
 Whole-squad advice is available at `http://localhost:3000/pro/squad-action`.
-After confirming all 15 selling prices, a manager can ask for the best current
-action without naming a player. The versioned policy ranks squad concerns and
-every legal one-player route against rolling, tests exact hit cost, and exposes
-Safe, Balanced and Aggressive thresholds. See the
+A manager can ask for the best current action without entering all 15 selling
+prices. GafferTalk requests only a relevant outgoing player's price when needed
+to validate a promising route. The versioned policy ranks squad concerns,
+compares one-player routes with rolling, tests exact hit cost, and exposes Safe,
+Balanced and Aggressive thresholds. See the
 [Pro whole-squad action architecture](docs/architecture/pro-squad-action-research.md).
 
 The API is prepared for a private Railway staging service while the web

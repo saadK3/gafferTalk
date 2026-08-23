@@ -11,6 +11,7 @@ from gaffertalk_api.domain.pro_research import (
     SquadActionCandidate,
     SquadActionKind,
     SquadActionReport,
+    SquadActionStatus,
 )
 from gaffertalk_api.integrations.llm.groq import GroqConversationClient
 
@@ -168,6 +169,7 @@ async def test_pro_synthesis_rejects_unknown_reason() -> None:
 
 def squad_action_report() -> SquadActionReport:
     return SquadActionReport.model_construct(
+        status=SquadActionStatus.ROLL,
         recommended_action=SquadActionCandidate(
             action=SquadActionKind.ROLL,
             evidence_gain=0,
@@ -176,9 +178,13 @@ def squad_action_report() -> SquadActionReport:
             free_transfers_used=0,
             free_transfers_after=2,
             points_hit=0,
+            budget_status="not_applicable",
             explanation="Roll the transfer and preserve flexibility.",
         ),
         grounded_reasons=(
+            GroundedReason(
+                id="recommended_action", text="Roll the transfer and preserve flexibility."
+            ),
             GroundedReason(id="leading_priority", text="No urgent squad issue is present."),
             GroundedReason(
                 id="roll_comparison",
@@ -192,8 +198,12 @@ def squad_action_report() -> SquadActionReport:
 async def test_squad_action_synthesis_preserves_action_and_reason_boundary() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         supplied = json.loads(json.loads(request.content)["messages"][1]["content"])
-        assert supplied["action"] == "roll"
-        assert supplied["available_reason_ids"] == ["leading_priority", "roll_comparison"]
+        assert supplied["status"] == "roll"
+        assert supplied["available_reason_ids"] == [
+            "recommended_action",
+            "leading_priority",
+            "roll_comparison",
+        ]
         return httpx.Response(
             200,
             json={
@@ -201,7 +211,7 @@ async def test_squad_action_synthesis_preserves_action_and_reason_boundary() -> 
                     {
                         "message": {
                             "content": json.dumps(
-                                {"action": "roll", "reason_ids": ["roll_comparison"]}
+                                {"status": "roll", "reason_ids": ["roll_comparison"]}
                             )
                         }
                     }
@@ -242,7 +252,7 @@ async def test_squad_action_synthesis_rejects_changed_action() -> None:
                     {
                         "message": {
                             "content": json.dumps(
-                                {"action": "transfer", "reason_ids": ["roll_comparison"]}
+                                {"status": "transfer", "reason_ids": ["roll_comparison"]}
                             )
                         }
                     }

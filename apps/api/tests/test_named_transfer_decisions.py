@@ -86,6 +86,7 @@ def scenario(
     sample_starts: int = 5,
     alternative_points: int = 34,
     alternative_xgi: float = 1.0,
+    alternative_price: int = 75,
 ) -> tuple[
     FplCatalogue,
     SquadSnapshot,
@@ -130,7 +131,7 @@ def scenario(
     alternative = make_player(
         17,
         Position.MIDFIELDER,
-        price=75,
+        price=alternative_price,
         points=alternative_points,
         starts=sample_starts,
         minutes=sample_starts * 90,

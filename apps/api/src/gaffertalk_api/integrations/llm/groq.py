@@ -145,14 +145,14 @@ class GroqConversationClient:
         content = await self._completion(
             system=(
                 "Select emphasis for a validated FPL whole-squad decision. Return JSON only "
-                "with the exact supplied action and one to three reason_ids copied from "
+                "with the exact supplied status and one to three reason_ids copied from "
                 "available_reason_ids. Do not return prose, players, statistics, prices, "
                 "fixtures or transfer routes."
             ),
             user=json.dumps(
                 {
                     "question": question,
-                    "action": report.recommended_action.action,
+                    "status": report.status,
                     "available_reason_ids": list(reasons),
                 }
             ),
@@ -161,8 +161,8 @@ class GroqConversationClient:
             selection = SquadActionSynthesisSelection.model_validate_json(content)
         except ValidationError as error:
             raise ValueError("Groq returned an invalid squad-action synthesis") from error
-        if selection.action is not report.recommended_action.action:
-            raise ValueError("Groq changed the deterministic squad action")
+        if selection.status is not report.status:
+            raise ValueError("Groq changed the deterministic squad-action status")
         if len(set(selection.reason_ids)) != len(selection.reason_ids):
             raise ValueError("Groq repeated a squad-action synthesis reason")
         if set(selection.reason_ids) - set(reasons):
@@ -170,10 +170,13 @@ class GroqConversationClient:
         selected = [
             reasons[reason_id]
             for reason_id in selection.reason_ids
-            if reasons[reason_id] != report.recommended_action.explanation
+            if reason_id != "recommended_action"
         ]
         detail = " ".join(selected)
-        return f"{report.recommended_action.explanation} {detail}".strip()
+        action_text = reasons.get("recommended_action")
+        if action_text is None:
+            raise ValueError("Squad-action report is missing its approved action reason")
+        return f"{action_text} {detail}".strip()
 
     async def _completion(self, *, system: str, user: str, json_mode: bool = True) -> str:
         payload: dict[str, object] = {

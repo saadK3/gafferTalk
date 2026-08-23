@@ -10,6 +10,7 @@ from gaffertalk_api.domain.pro_research import (
     ConfidenceLevel,
     RiskPreference,
     SquadActionKind,
+    SquadActionStatus,
 )
 from gaffertalk_api.domain.transfers import TransferPlanningState
 from gaffertalk_api.main import app, get_pro_research_loader
@@ -21,14 +22,20 @@ def run_report(
     risk: RiskPreference = RiskPreference.BALANCED,
     histories_complete: bool = True,
     created_offset: timedelta = timedelta(0),
+    confirmed_prices: dict[int, int] | None = None,
     **options: object,
 ):
     catalogue, snapshot, fixtures, original_state, _, _, _ = scenario(**options)
     assert original_state.bank is not None and original_state.free_transfers is not None
+    prices = (
+        {pick.player.id: pick.player.current_price for pick in snapshot.picks}
+        if confirmed_prices is None
+        else {player_id: Money(tenths=price) for player_id, price in confirmed_prices.items()}
+    )
     state = TransferPlanningState(
         bank=original_state.bank,
         free_transfers=original_state.free_transfers,
-        selling_prices={pick.player.id: pick.player.current_price for pick in snapshot.picks},
+        selling_prices=prices,
     )
     service = SquadActionDecisionService()
     ids = service.preview_evidence_ids(
@@ -59,19 +66,106 @@ def test_clearly_roll_when_no_action_clears_threshold() -> None:
     report = run_report(target_points=15, target_xgi=0.2, alternative_points=15)
 
     assert report.recommended_action.action is SquadActionKind.ROLL
+    assert report.status is SquadActionStatus.ROLL
     assert report.recommended_action.free_transfers_after == 2
     assert report.compared_actions[1].action is SquadActionKind.TRANSFER
+
+
+def test_conclusive_roll_needs_no_selling_price() -> None:
+    report = run_report(
+        confirmed_prices={},
+        target_points=15,
+        target_xgi=0.2,
+        alternative_points=15,
+    )
+
+    assert report.status is SquadActionStatus.ROLL
+    assert report.requested_selling_price_for is None
+    assert report.recommended_action is not None
+    assert report.recommended_action.action is SquadActionKind.ROLL
 
 
 def test_clearly_act_on_best_whole_squad_route() -> None:
     report = run_report(target_points=80, target_xgi=4.0)
 
     assert report.recommended_action.action is SquadActionKind.TRANSFER
+    assert report.status is SquadActionStatus.TRANSFER
     assert report.recommended_action.incoming is not None
     assert report.recommended_action.incoming.id == 16
     assert report.recommended_action.points_hit == 0
     assert report.recommended_action.free_transfers_used == 1
     assert report.recommended_action.free_transfers_after == 0
+    assert report.recommended_action.budget_status == "exact"
+    assert "after exact selling-price validation" in report.priority_explanation
+    matching_routes = [
+        candidate
+        for candidate in report.compared_actions
+        if candidate.outgoing is not None
+        and candidate.incoming is not None
+        and candidate.outgoing.id == report.recommended_action.outgoing.id
+        and candidate.incoming.id == report.recommended_action.incoming.id
+    ]
+    assert len(matching_routes) == 1
+
+
+def test_one_confirmed_price_turns_preliminary_route_into_legal_transfer() -> None:
+    preliminary = run_report(confirmed_prices={}, target_points=80, target_xgi=4.0)
+    assert preliminary.status is SquadActionStatus.NEEDS_SELLING_PRICE
+    assert preliminary.requested_selling_price_for is not None
+    outgoing = preliminary.requested_selling_price_for
+
+    final = run_report(
+        confirmed_prices={outgoing.id: outgoing.current_price.tenths},
+        target_points=80,
+        target_xgi=4.0,
+    )
+
+    assert final.status is SquadActionStatus.TRANSFER
+    assert final.recommended_action is not None
+    assert final.recommended_action.outgoing is not None
+    assert final.recommended_action.outgoing.id == outgoing.id
+    assert final.recommended_action.budget_status == "exact"
+
+
+def test_unaffordable_first_route_requests_next_relevant_outgoing_price() -> None:
+    preliminary = run_report(
+        confirmed_prices={},
+        target_points=90,
+        target_xgi=4.0,
+        alternative_points=75,
+        alternative_xgi=3.0,
+        alternative_price=55,
+    )
+    assert preliminary.requested_selling_price_for is not None
+    first_id = preliminary.requested_selling_price_for.id
+
+    next_step = run_report(
+        confirmed_prices={first_id: 40},
+        target_points=90,
+        target_xgi=4.0,
+        alternative_points=75,
+        alternative_xgi=3.0,
+        alternative_price=55,
+    )
+
+    assert next_step.status is SquadActionStatus.NEEDS_SELLING_PRICE
+    assert next_step.requested_selling_price_for is not None
+    assert next_step.requested_selling_price_for.id != first_id
+
+
+def test_all_confirmed_optimistic_routes_can_resolve_to_insufficient_gain() -> None:
+    report = run_report(
+        confirmed_prices={player_id: 40 for player_id in range(1, 16)},
+        target_points=90,
+        target_xgi=4.0,
+        alternative_points=75,
+        alternative_xgi=3.0,
+        alternative_price=55,
+    )
+
+    assert report.status is SquadActionStatus.INSUFFICIENT_GAIN
+    assert report.recommended_action is not None
+    assert report.recommended_action.action is SquadActionKind.ROLL
 
 
 def test_injured_starter_is_leading_priority_and_deprioritizes_other_players() -> None:
@@ -188,7 +282,7 @@ def test_tied_priorities_are_ranked_deterministically() -> None:
     assert [concern.player.id for concern in report.ranked_concerns[:2]] == [9, 10]
 
 
-def test_missing_or_impossible_selling_prices_are_actionable() -> None:
+def test_missing_selling_prices_produce_preliminary_request() -> None:
     catalogue, snapshot, fixtures, original_state, _, _, _ = scenario()
     assert original_state.bank is not None and original_state.free_transfers is not None
     missing = TransferPlanningState(
@@ -198,18 +292,23 @@ def test_missing_or_impossible_selling_prices_are_actionable() -> None:
     )
     service = SquadActionDecisionService()
 
-    try:
-        service.preview_evidence_ids(
-            snapshot=snapshot,
-            catalogue=catalogue,
-            fixtures=fixtures,
-            state=missing,
-            risk_preference=RiskPreference.BALANCED,
-        )
-    except ValueError as error:
-        assert "every player" in str(error)
-    else:
-        raise AssertionError("missing selling prices must fail")
+    report = service.research(
+        squad_name="Progressive squad",
+        snapshot=snapshot,
+        catalogue=catalogue,
+        fixtures=fixtures,
+        state=missing,
+        risk_preference=RiskPreference.BALANCED,
+        histories={},
+        created_at=NOW,
+    )
+    assert report.status is SquadActionStatus.NEEDS_SELLING_PRICE
+    assert report.recommended_action is None
+    assert report.provisional_action is not None
+    assert report.provisional_action.budget_status == "optimistic"
+    assert report.requested_selling_price_for is not None
+    assert report.requested_selling_price_for.id == report.provisional_action.outgoing.id
+    assert "not yet confirmed" in report.provisional_action.explanation
 
     impossible = TransferPlanningState(
         bank=original_state.bank,
@@ -235,14 +334,20 @@ def test_missing_or_impossible_selling_prices_are_actionable() -> None:
 
 class StubSquadActionLoader:
     async def squad_action(self, request):
-        return run_report(risk=request.risk_preference, target_points=80, target_xgi=4.0)
+        return run_report(
+            risk=request.risk_preference,
+            confirmed_prices=request.selling_prices_tenths,
+            target_points=80,
+            target_xgi=4.0,
+        )
 
 
 class StubSquadActionGroq:
     model = "test-pro-model"
 
     async def synthesize_squad_action_report(self, question: str, report):
-        return f"Grounded: {report.recommended_action.explanation}"
+        action = report.recommended_action or report.provisional_action
+        return f"Grounded: {action.explanation}"
 
 
 class FailingSquadActionGroq(StubSquadActionGroq):
@@ -259,7 +364,10 @@ def squad_action_payload() -> dict[str, object]:
             "bank_tenths": 10,
             "free_transfers": 1,
         },
-        "selling_prices_tenths": {str(player_id): 50 for player_id in range(1, 16)},
+        "selling_prices_tenths": {
+            **{str(player_id): 50 for player_id in range(1, 16)},
+            "8": 80,
+        },
         "risk_preference": "balanced",
         "question": "What should I do with my transfer this week?",
     }
@@ -308,7 +416,7 @@ async def test_squad_action_provider_failure_has_no_partial_fallback() -> None:
 
 
 @pytest.mark.anyio
-async def test_squad_action_request_requires_every_selling_price() -> None:
+async def test_squad_action_request_accepts_partial_selling_prices() -> None:
     payload = squad_action_payload()
     payload["selling_prices_tenths"] = {"1": 50}
     app.state.groq_client = StubSquadActionGroq()
@@ -320,4 +428,26 @@ async def test_squad_action_request_requires_every_selling_price() -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["report"]["status"] == "needs_selling_price"
+
+
+@pytest.mark.anyio
+async def test_squad_action_endpoint_starts_without_selling_prices() -> None:
+    payload = squad_action_payload()
+    payload["selling_prices_tenths"] = {}
+    app.state.groq_client = StubSquadActionGroq()
+    app.dependency_overrides[get_pro_research_loader] = lambda: StubSquadActionLoader()
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/v1/pro/research/squad-action", json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    report = response.json()["report"]
+    assert report["status"] == "needs_selling_price"
+    assert report["recommended_action"] is None
+    assert report["provisional_action"]["budget_status"] == "optimistic"
+    assert report["requested_selling_price_for"]["id"] == 8
