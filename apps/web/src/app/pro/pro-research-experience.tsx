@@ -163,7 +163,10 @@ export function ProResearchExperience() {
     <main className={styles.app}>
       <header className={styles.header}>
         <Link href="/" className={styles.wordmark}>GafferTalk<span>.</span></Link>
-        <div><span>Pro research preview</span><i /><b>Named transfer</b></div>
+        <nav className={styles.modeNav} aria-label="Pro research modes">
+          <Link href="/pro" aria-current="page">Named transfer</Link>
+          <Link href="/pro/squad-action">Best squad action</Link>
+        </nav>
         <Link href="/team">Reconfirm team</Link>
       </header>
 

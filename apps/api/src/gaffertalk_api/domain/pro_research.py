@@ -139,3 +139,97 @@ class NamedTransferResearchResponse(DomainModel):
 class ProSynthesisSelection(DomainModel):
     verdict: ProVerdict
     reason_ids: tuple[str, ...] = Field(min_length=1, max_length=3)
+
+
+class RiskPreference(StrEnum):
+    SAFE = "safe"
+    BALANCED = "balanced"
+    AGGRESSIVE = "aggressive"
+
+
+class SquadActionKind(StrEnum):
+    TRANSFER = "transfer"
+    ROLL = "roll"
+
+
+class ConcernKind(StrEnum):
+    AVAILABILITY = "availability"
+    MINUTES = "minutes"
+    UPGRADE = "upgrade"
+    BENCH_RELIANCE = "bench_reliance"
+
+
+class RankedSquadConcern(DomainModel):
+    rank: int = Field(ge=1, le=15)
+    player: Player
+    kind: ConcernKind
+    priority_score: float = Field(ge=0, le=100)
+    starting_slot: bool
+    explanation: str = Field(min_length=1)
+
+
+class SquadActionCandidate(DomainModel):
+    action: SquadActionKind
+    outgoing: Player | None = None
+    incoming: Player | None = None
+    evidence_gain: float
+    policy_adjusted_gain: float
+    remaining_bank: Money
+    free_transfers_used: int = Field(ge=0, le=1)
+    free_transfers_after: int = Field(ge=0, le=5)
+    points_hit: int = Field(ge=0)
+    explanation: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def transfer_has_players(self) -> "SquadActionCandidate":
+        has_route = self.outgoing is not None and self.incoming is not None
+        if (self.action is SquadActionKind.TRANSFER) != has_route:
+            raise ValueError("a transfer action must include outgoing and incoming players")
+        return self
+
+
+class HitAnalysis(DomainModel):
+    points_hit: int = Field(ge=0)
+    justified: bool
+    transfer_adjusted_gain: float
+    required_gain: float = Field(ge=0)
+    comparison: str = Field(min_length=1)
+
+
+class SquadActionConfidence(DomainModel):
+    level: ConfidenceLevel
+    policy_version: Literal["1.0"] = "1.0"
+    reasons: tuple[str, ...] = Field(min_length=1)
+
+
+class SquadActionReport(DomainModel):
+    schema_version: Literal["1.0"] = "1.0"
+    decision_policy_version: Literal["1.0"] = "1.0"
+    squad_name: str = Field(min_length=1)
+    created_at: datetime
+    data_retrieved_at: datetime
+    risk_preference: RiskPreference
+    recommended_action: SquadActionCandidate
+    ranked_concerns: tuple[RankedSquadConcern, ...] = Field(min_length=1, max_length=15)
+    compared_actions: tuple[SquadActionCandidate, ...] = Field(min_length=2)
+    roll_threshold: float = Field(ge=0)
+    priority_explanation: str = Field(min_length=1)
+    hit_analysis: HitAnalysis
+    planning_impact: str = Field(min_length=1)
+    confidence: SquadActionConfidence
+    change_conditions: tuple[str, ...] = Field(min_length=1)
+    evidence: tuple[PlayerEvidence, ...] = Field(min_length=1)
+    assumptions: tuple[str, ...] = Field(min_length=1)
+    grounded_reasons: tuple[GroundedReason, ...] = Field(min_length=1)
+
+
+class SquadActionResearchResponse(DomainModel):
+    report: SquadActionReport
+    assistant_message: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+
+
+class SquadActionSynthesisSelection(DomainModel):
+    action: SquadActionKind
+    reason_ids: tuple[str, ...] = Field(min_length=1, max_length=3)

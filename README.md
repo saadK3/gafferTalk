@@ -124,6 +124,13 @@ deterministic categorical confidence. Groq may select only backend-approved
 reason IDs; it cannot add facts or change the verdict. See the
 [Pro named-transfer architecture](docs/architecture/pro-named-transfer-research.md).
 
+Whole-squad advice is available at `http://localhost:3000/pro/squad-action`.
+After confirming all 15 selling prices, a manager can ask for the best current
+action without naming a player. The versioned policy ranks squad concerns and
+every legal one-player route against rolling, tests exact hit cost, and exposes
+Safe, Balanced and Aggressive thresholds. See the
+[Pro whole-squad action architecture](docs/architecture/pro-squad-action-research.md).
+
 The API is prepared for a private Railway staging service while the web
 application remains on Cloudflare. See the
 [Railway API runbook](docs/operations/railway-api.md) for the monorepo paths,
@@ -136,6 +143,7 @@ Recommendation endpoints:
 POST /v1/recommendations/transfers
 POST /v1/recommendations/conversation
 POST /v1/pro/research/named-transfer
+POST /v1/pro/research/squad-action
 GET /v1/free/usage
 ```
 
