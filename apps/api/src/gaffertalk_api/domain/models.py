@@ -69,6 +69,9 @@ class Player(DomainModel):
     expected_goals: float = Field(default=0, ge=0)
     expected_assists: float = Field(default=0, ge=0)
     selected_by_percent: float = Field(default=0, ge=0, le=100)
+    goals_scored: int = Field(default=0, ge=0)
+    assists: int = Field(default=0, ge=0)
+    bonus: int = Field(default=0, ge=0)
 
 
 class Fixture(DomainModel):

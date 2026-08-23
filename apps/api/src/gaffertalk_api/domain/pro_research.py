@@ -1,0 +1,141 @@
+from datetime import datetime
+from enum import StrEnum
+from typing import Literal
+
+from pydantic import Field, model_validator
+
+from gaffertalk_api.domain.models import DataProvenance, DomainModel, Money, Player
+
+
+class ProVerdict(StrEnum):
+    BUY = "buy"
+    HOLD = "hold"
+    WAIT = "wait"
+    AVOID = "avoid"
+
+
+class ConfidenceLevel(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class DecisionAction(StrEnum):
+    REQUESTED_TRANSFER = "requested_transfer"
+    HOLD = "hold"
+    WAIT = "wait"
+    ALTERNATIVE_TRANSFER = "alternative_transfer"
+
+
+class EvidenceMetric(DomainModel):
+    key: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    value: float
+    display_value: str = Field(min_length=1)
+    provenance: DataProvenance
+    source: str = Field(min_length=1)
+
+
+class FixtureRun(DomainModel):
+    difficulties: tuple[int, ...] = Field(max_length=5)
+    average_difficulty: float | None = Field(default=None, ge=1, le=5)
+    fixtures_considered: int = Field(ge=0, le=5)
+
+
+class PlayerEvidence(DomainModel):
+    player: Player
+    metrics: tuple[EvidenceMetric, ...]
+    next_five: FixtureRun
+    next_three: FixtureRun
+    recent_gameweeks: tuple[int, ...] = Field(max_length=5)
+    evidence_score: float = Field(ge=0, le=100)
+    source_retrieved_at: datetime
+
+
+class LegalTransferRoute(DomainModel):
+    outgoing: Player
+    incoming: Player
+    remaining_bank: Money
+    free_transfers_after: int = Field(ge=0, le=5)
+    points_hit: int = Field(ge=0)
+
+
+class DecisionAlternative(DomainModel):
+    action: DecisionAction
+    player: Player | None = None
+    explanation: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def transfer_has_player(self) -> "DecisionAlternative":
+        is_transfer = self.action in {
+            DecisionAction.REQUESTED_TRANSFER,
+            DecisionAction.ALTERNATIVE_TRANSFER,
+        }
+        if is_transfer != (self.player is not None):
+            raise ValueError("transfer alternatives must include a player")
+        return self
+
+
+class SquadPriority(DomainModel):
+    more_urgent: bool
+    player: Player | None = None
+    explanation: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def urgent_priority_has_player(self) -> "SquadPriority":
+        if self.more_urgent != (self.player is not None):
+            raise ValueError("an urgent squad priority must identify a player")
+        return self
+
+
+class OpportunityCost(DomainModel):
+    free_transfers_used: int = Field(ge=0, le=2)
+    points_hit: int = Field(ge=0)
+    remaining_bank: Money
+    flexibility: Literal["strong", "moderate", "limited"]
+    explanation: str = Field(min_length=1)
+
+
+class DecisionConfidence(DomainModel):
+    level: ConfidenceLevel
+    policy_version: Literal["1.0"] = "1.0"
+    reasons: tuple[str, ...] = Field(min_length=1)
+
+
+class GroundedReason(DomainModel):
+    id: str = Field(pattern=r"^[a-z0-9_]+$")
+    text: str = Field(min_length=1)
+
+
+class ProDecisionReport(DomainModel):
+    schema_version: Literal["1.0"] = "1.0"
+    squad_name: str = Field(min_length=1)
+    created_at: datetime
+    data_retrieved_at: datetime
+    verdict: ProVerdict
+    recommended_action: str = Field(min_length=1)
+    compared_actions: tuple[DecisionAction, ...] = Field(min_length=3)
+    requested_route: LegalTransferRoute
+    case_for: tuple[str, ...] = Field(min_length=1)
+    case_against: tuple[str, ...] = Field(min_length=1)
+    best_alternative: DecisionAlternative
+    squad_priority: SquadPriority
+    opportunity_cost: OpportunityCost
+    planning_impact: str = Field(min_length=1)
+    confidence: DecisionConfidence
+    change_conditions: tuple[str, ...] = Field(min_length=1)
+    evidence: tuple[PlayerEvidence, ...] = Field(min_length=2)
+    assumptions: tuple[str, ...] = Field(min_length=1)
+    grounded_reasons: tuple[GroundedReason, ...] = Field(min_length=1)
+
+
+class NamedTransferResearchResponse(DomainModel):
+    report: ProDecisionReport
+    assistant_message: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+
+
+class ProSynthesisSelection(DomainModel):
+    verdict: ProVerdict
+    reason_ids: tuple[str, ...] = Field(min_length=1, max_length=3)

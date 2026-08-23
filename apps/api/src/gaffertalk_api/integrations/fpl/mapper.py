@@ -69,6 +69,9 @@ def map_catalogue(bootstrap: FplBootstrap, retrieved_at: datetime) -> FplCatalog
             expected_goals=element.expected_goals,
             expected_assists=element.expected_assists,
             selected_by_percent=element.selected_by_percent,
+            goals_scored=element.goals_scored,
+            assists=element.assists,
+            bonus=element.bonus,
         )
 
     gameweeks = tuple(

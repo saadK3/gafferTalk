@@ -115,6 +115,15 @@ Named-player questions first pass deterministic ownership, position,
 availability, budget and club-limit checks. Invalid or unsupported moves return
 an actionable explanation without calling Groq or consuming the allowance.
 
+The first Pro vertical is available at `http://localhost:3000/pro` after the
+same team-confirmation journey. It evaluates one named transfer against holding,
+waiting, a stronger legal alternative and explicit squad availability risks.
+The versioned report shows opportunity cost, next-three planning impact,
+structured evidence, freshness, assumptions, change conditions and
+deterministic categorical confidence. Groq may select only backend-approved
+reason IDs; it cannot add facts or change the verdict. See the
+[Pro named-transfer architecture](docs/architecture/pro-named-transfer-research.md).
+
 The API is prepared for a private Railway staging service while the web
 application remains on Cloudflare. See the
 [Railway API runbook](docs/operations/railway-api.md) for the monorepo paths,
@@ -126,6 +135,7 @@ Recommendation endpoints:
 ```text
 POST /v1/recommendations/transfers
 POST /v1/recommendations/conversation
+POST /v1/pro/research/named-transfer
 GET /v1/free/usage
 ```
 

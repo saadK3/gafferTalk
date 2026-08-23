@@ -1,3 +1,4 @@
+import unicodedata
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -7,6 +8,14 @@ from gaffertalk_api.domain.errors import InvalidUpstreamFplResponseError
 from gaffertalk_api.domain.models import FplCatalogue, Player, Position
 from gaffertalk_api.integrations.fpl.client import FplClient
 from gaffertalk_api.integrations.fpl.mapper import map_catalogue
+
+NAME_TRANSLATIONS: dict[str, str | int | None] = {
+    "ø": "o",
+    "đ": "d",
+    "ð": "d",
+    "ł": "l",
+    "þ": "th",
+}
 
 
 class PlayerCatalogueLoader:
@@ -38,10 +47,20 @@ class PlayerCatalogueLoader:
         limit: int = 30,
     ) -> tuple[Player, ...]:
         catalogue = await self.load()
-        normalized_query = query.casefold().strip()
+        normalized_query = self._normalize_name(query)
         players = (
             player
             for player in catalogue.players.values()
-            if player.position is position and normalized_query in player.web_name.casefold()
+            if player.position is position
+            and normalized_query in self._normalize_name(player.web_name)
         )
         return tuple(sorted(players, key=lambda player: player.web_name.casefold())[:limit])
+
+    @staticmethod
+    def _normalize_name(value: str) -> str:
+        folded = value.casefold().translate(str.maketrans(NAME_TRANSLATIONS))
+        return "".join(
+            character
+            for character in unicodedata.normalize("NFKD", folded).strip()
+            if not unicodedata.combining(character)
+        )

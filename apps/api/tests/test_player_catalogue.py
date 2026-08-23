@@ -44,6 +44,16 @@ async def test_catalogue_search_filters_position_and_name() -> None:
                 "chance_of_playing_next_round": None,
                 "news": "",
             },
+            {
+                "id": 2003,
+                "web_name": "Ødegaard",
+                "team": bootstrap["teams"][0]["id"],
+                "element_type": 3,
+                "now_cost": 85,
+                "status": "a",
+                "chance_of_playing_next_round": None,
+                "news": "",
+            },
         ]
     )
 
@@ -61,7 +71,12 @@ async def test_catalogue_search_filters_position_and_name() -> None:
     )
     try:
         results = await loader.search(position=Position.MIDFIELDER, query="palm")
+        normalized_results = await loader.search(
+            position=Position.MIDFIELDER,
+            query="Odegaard",
+        )
     finally:
         await async_client.aclose()
 
     assert [player.web_name for player in results] == ["Palmer"]
+    assert [player.web_name for player in normalized_results] == ["Ødegaard"]
