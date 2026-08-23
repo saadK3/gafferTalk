@@ -5,7 +5,12 @@ from pydantic import ValidationError
 
 from gaffertalk_api.domain.conversation import TransferIntent
 from gaffertalk_api.domain.models import Player
-from gaffertalk_api.domain.pro_research import ProDecisionReport, ProSynthesisSelection
+from gaffertalk_api.domain.pro_research import (
+    ProDecisionReport,
+    ProSynthesisSelection,
+    SquadActionReport,
+    SquadActionSynthesisSelection,
+)
 from gaffertalk_api.domain.recommendations import RecommendationResult
 
 
@@ -132,6 +137,46 @@ class GroqConversationClient:
             else " Recheck the change conditions before the deadline."
         )
         return f"{report.recommended_action} {detail}{agency}".strip()
+
+    async def synthesize_squad_action_report(self, question: str, report: SquadActionReport) -> str:
+        """Render a whole-squad summary from deterministic approved reasons only."""
+
+        reasons = {reason.id: reason.text for reason in report.grounded_reasons}
+        content = await self._completion(
+            system=(
+                "Select emphasis for a validated FPL whole-squad decision. Return JSON only "
+                "with the exact supplied status and one to three reason_ids copied from "
+                "available_reason_ids. Do not return prose, players, statistics, prices, "
+                "fixtures or transfer routes."
+            ),
+            user=json.dumps(
+                {
+                    "question": question,
+                    "status": report.status,
+                    "available_reason_ids": list(reasons),
+                }
+            ),
+        )
+        try:
+            selection = SquadActionSynthesisSelection.model_validate_json(content)
+        except ValidationError as error:
+            raise ValueError("Groq returned an invalid squad-action synthesis") from error
+        if selection.status is not report.status:
+            raise ValueError("Groq changed the deterministic squad-action status")
+        if len(set(selection.reason_ids)) != len(selection.reason_ids):
+            raise ValueError("Groq repeated a squad-action synthesis reason")
+        if set(selection.reason_ids) - set(reasons):
+            raise ValueError("Groq selected a reason absent from the squad-action report")
+        selected = [
+            reasons[reason_id]
+            for reason_id in selection.reason_ids
+            if reason_id != "recommended_action"
+        ]
+        detail = " ".join(selected)
+        action_text = reasons.get("recommended_action")
+        if action_text is None:
+            raise ValueError("Squad-action report is missing its approved action reason")
+        return f"{action_text} {detail}".strip()
 
     async def _completion(self, *, system: str, user: str, json_mode: bool = True) -> str:
         payload: dict[str, object] = {

@@ -4,6 +4,7 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from gaffertalk_api.domain.models import DomainModel, Player
+from gaffertalk_api.domain.pro_research import RiskPreference
 from gaffertalk_api.domain.recommendations import RecommendationResult, RecommendationStrategy
 
 
@@ -45,6 +46,21 @@ class NamedTransferResearchRequest(DomainModel):
     def players_are_different(self) -> "NamedTransferResearchRequest":
         if self.outgoing_player_id == self.target_player_id:
             raise ValueError("outgoing and target players must be different")
+        return self
+
+
+class SquadActionResearchRequest(DomainModel):
+    squad: CurrentSquadInput
+    selling_prices_tenths: dict[int, int] = Field(default_factory=dict)
+    risk_preference: RiskPreference = RiskPreference.BALANCED
+    question: str = Field(min_length=3, max_length=500)
+
+    @model_validator(mode="after")
+    def valid_selling_prices(self) -> "SquadActionResearchRequest":
+        if not set(self.selling_prices_tenths).issubset(self.squad.player_ids):
+            raise ValueError("selling prices may only reference players in the confirmed squad")
+        if any(price < 0 or price > 300 for price in self.selling_prices_tenths.values()):
+            raise ValueError("every selling price must be between £0.0m and £30.0m")
         return self
 
 

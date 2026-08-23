@@ -306,3 +306,78 @@ export function researchNamedTransfer(
 ): Promise<NamedTransferResearchResponse> {
   return post("/v1/pro/research/named-transfer", input, signal);
 }
+
+export type RiskPreference = "safe" | "balanced" | "aggressive";
+
+export type SquadActionCandidate = {
+  action: "transfer" | "roll";
+  outgoing: ApiPlayer | null;
+  incoming: ApiPlayer | null;
+  evidence_gain: number;
+  policy_adjusted_gain: number;
+  remaining_bank: ApiMoney;
+  free_transfers_used: number;
+  free_transfers_after: number;
+  points_hit: number;
+  budget_status: "optimistic" | "exact" | "not_applicable";
+  explanation: string;
+};
+
+export type SquadActionReport = {
+  schema_version: "1.0";
+  decision_policy_version: "1.0";
+  squad_name: string;
+  created_at: string;
+  data_retrieved_at: string;
+  risk_preference: RiskPreference;
+  status: "needs_selling_price" | "transfer" | "roll" | "insufficient_gain";
+  recommended_action: SquadActionCandidate | null;
+  provisional_action: SquadActionCandidate | null;
+  requested_selling_price_for: ApiPlayer | null;
+  ranked_concerns: Array<{
+    rank: number;
+    player: ApiPlayer;
+    kind: "availability" | "minutes" | "upgrade" | "bench_reliance";
+    priority_score: number;
+    starting_slot: boolean;
+    explanation: string;
+  }>;
+  compared_actions: SquadActionCandidate[];
+  roll_threshold: number;
+  priority_explanation: string;
+  hit_analysis: {
+    points_hit: number;
+    justified: boolean;
+    transfer_adjusted_gain: number;
+    required_gain: number;
+    comparison: string;
+  };
+  planning_impact: string;
+  confidence: {
+    level: "high" | "medium" | "low";
+    policy_version: "1.0";
+    reasons: string[];
+  };
+  change_conditions: string[];
+  evidence: ProPlayerEvidence[];
+  assumptions: string[];
+};
+
+export type SquadActionResearchResponse = {
+  report: SquadActionReport;
+  assistant_message: string;
+  provider: string;
+  model: string;
+};
+
+export function researchSquadAction(
+  input: {
+    squad: CurrentSquadRequest;
+    selling_prices_tenths: Record<number, number>;
+    risk_preference: RiskPreference;
+    question: string;
+  },
+  signal?: AbortSignal,
+): Promise<SquadActionResearchResponse> {
+  return post("/v1/pro/research/squad-action", input, signal);
+}

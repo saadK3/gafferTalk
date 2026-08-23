@@ -18,7 +18,10 @@ from gaffertalk_api.domain.errors import (
     UpstreamFplUnavailableError,
 )
 from gaffertalk_api.domain.models import Player, Position, SquadLookupResult
-from gaffertalk_api.domain.pro_research import NamedTransferResearchResponse
+from gaffertalk_api.domain.pro_research import (
+    NamedTransferResearchResponse,
+    SquadActionResearchResponse,
+)
 from gaffertalk_api.domain.recommendation_requests import (
     ConversationalRecommendationRequest,
     ConversationalRecommendationResponse,
@@ -28,6 +31,7 @@ from gaffertalk_api.domain.recommendation_requests import (
     FreeQuestionQuota,
     NamedTransferResearchRequest,
     OutgoingSelectionMode,
+    SquadActionResearchRequest,
     TransferRecommendationRequest,
 )
 from gaffertalk_api.domain.recommendations import RecommendationResult
@@ -315,6 +319,64 @@ async def research_named_transfer(
             detail={"code": "pro_research_unavailable", "message": "Groq is unavailable."},
         ) from error
     return NamedTransferResearchResponse(
+        report=report,
+        assistant_message=assistant_message,
+        provider="groq",
+        model=groq.model,
+    )
+
+
+@app.post(
+    "/v1/pro/research/squad-action",
+    response_model=SquadActionResearchResponse,
+    tags=["Pro research"],
+)
+async def research_squad_action(
+    request: SquadActionResearchRequest,
+    http_request: Request,
+    loader: Annotated[ProResearchLoader, Depends(get_pro_research_loader)],
+) -> SquadActionResearchResponse:
+    """Rank the best legal squad action against rolling under a selected risk policy."""
+
+    groq: GroqConversationClient | None = http_request.app.state.groq_client
+    if groq is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "pro_research_unconfigured",
+                "message": "Pro research needs a configured Groq API key.",
+            },
+        )
+    try:
+        report = await loader.squad_action(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_pro_research_state", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    try:
+        assistant_message = await groq.synthesize_squad_action_report(request.question, report)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "pro_grounding_rejected",
+                "message": "The research summary failed its grounding check.",
+            },
+        ) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "pro_research_unavailable", "message": "Groq is unavailable."},
+        ) from error
+    return SquadActionResearchResponse(
         report=report,
         assistant_message=assistant_message,
         provider="groq",
