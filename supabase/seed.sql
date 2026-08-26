@@ -1,0 +1,2 @@
+-- Application tests create isolated users through the local Auth API.
+-- No login-capable or manager-identifying seed accounts are committed.

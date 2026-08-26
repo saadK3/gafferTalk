@@ -1,4 +1,4 @@
-.PHONY: install dev-api dev-web lookup-team recommend-one lint test typecheck check
+.PHONY: install dev-api dev-web lookup-team recommend-one supabase-start supabase-stop supabase-reset lint test typecheck check
 
 PYTHON ?= python3
 PNPM ?= pnpm
@@ -19,6 +19,15 @@ lookup-team:
 
 recommend-one:
 	$(PYTHON) -m gaffertalk_api.cli recommend-one --out "$(or $(OUT),Yates)"
+
+supabase-start:
+	$(PNPM) exec supabase start
+
+supabase-stop:
+	$(PNPM) exec supabase stop
+
+supabase-reset:
+	$(PNPM) exec supabase db reset --local
 
 lint:
 	$(PNPM) lint:web

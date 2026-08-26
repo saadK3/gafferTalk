@@ -22,6 +22,12 @@ from gaffertalk_api.domain.pro_research import (
     NamedTransferResearchResponse,
     SquadActionResearchResponse,
 )
+from gaffertalk_api.domain.pro_workspace import (
+    ConfirmedPlanningStateInput,
+    ProWorkspace,
+    WorkspaceNamedTransferRequest,
+    WorkspaceResearchResult,
+)
 from gaffertalk_api.domain.recommendation_requests import (
     ConversationalRecommendationRequest,
     ConversationalRecommendationResponse,
@@ -47,7 +53,16 @@ from gaffertalk_api.services.free_question_usage import (
 )
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
 from gaffertalk_api.services.pro_research_loader import ProResearchLoader
+from gaffertalk_api.services.pro_workspace import (
+    ProWorkspaceStore,
+    WorkspaceStateRequiredError,
+)
 from gaffertalk_api.services.recommendation_loader import RecommendationLoader
+from gaffertalk_api.services.supabase_auth import (
+    AuthenticatedAccount,
+    InvalidAccessTokenError,
+    SupabaseJwtVerifier,
+)
 from gaffertalk_api.services.synthetic_squad import (
     DEFAULT_SYNTHETIC_SQUAD_PATH,
     load_synthetic_squad,
@@ -84,6 +99,14 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings.free_usage_database_path,
         settings.free_question_limit,
     )
+    application.state.pro_workspace_store = (
+        ProWorkspaceStore.from_url(settings.database_url) if settings.database_url else None
+    )
+    application.state.auth_verifier = (
+        SupabaseJwtVerifier(settings.supabase_url, settings.supabase_jwt_audience)
+        if settings.supabase_url
+        else None
+    )
     application.state.groq_client = (
         GroqConversationClient(
             api_key=settings.groq_api_key,
@@ -97,6 +120,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        if application.state.pro_workspace_store is not None:
+            application.state.pro_workspace_store.close()
         if application.state.groq_client is not None:
             await application.state.groq_client.aclose()
         await client.aclose()
@@ -148,6 +173,55 @@ def get_pro_research_loader(request: Request) -> ProResearchLoader:
 
 def get_free_usage(request: Request) -> FreeQuestionUsageStore:
     return request.app.state.free_usage
+
+
+def get_pro_workspace_store(request: Request) -> ProWorkspaceStore:
+    store: ProWorkspaceStore | None = request.app.state.pro_workspace_store
+    if store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "pro_workspace_unconfigured",
+                "message": "The persistent Pro workspace is not configured.",
+            },
+        )
+    return store
+
+
+def authenticated_account(
+    request: Request,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> AuthenticatedAccount:
+    verifier: SupabaseJwtVerifier | None = request.app.state.auth_verifier
+    if verifier is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "pro_auth_unconfigured",
+                "message": "Pro authentication is not configured.",
+            },
+        )
+    if authorization is None or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "authentication_required", "message": "Sign in to continue."},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "authentication_required", "message": "Sign in to continue."},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        return verifier.verify(token)
+    except InvalidAccessTokenError as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "invalid_access_token", "message": str(error)},
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from error
 
 
 def free_client_id(
@@ -326,6 +400,80 @@ async def research_named_transfer(
         provider="groq",
         model=groq.model,
     )
+
+
+@app.get(
+    "/v1/pro/workspace",
+    response_model=ProWorkspace,
+    tags=["Pro workspace"],
+)
+async def get_pro_workspace(
+    account: Annotated[AuthenticatedAccount, Depends(authenticated_account)],
+    store: Annotated[ProWorkspaceStore, Depends(get_pro_workspace_store)],
+) -> ProWorkspace:
+    """Reopen the authenticated account's current state, messages and reports."""
+
+    return store.get(account.id)
+
+
+@app.put(
+    "/v1/pro/workspace/state",
+    response_model=ProWorkspace,
+    tags=["Pro workspace"],
+)
+async def confirm_pro_workspace_state(
+    state_input: ConfirmedPlanningStateInput,
+    account: Annotated[AuthenticatedAccount, Depends(authenticated_account)],
+    store: Annotated[ProWorkspaceStore, Depends(get_pro_workspace_store)],
+) -> ProWorkspace:
+    """Persist a new immutable version of the manager-confirmed planning state."""
+
+    return store.save_confirmed_state(account.id, state_input)
+
+
+@app.post(
+    "/v1/pro/workspace/research/named-transfer",
+    response_model=WorkspaceResearchResult,
+    tags=["Pro workspace"],
+)
+async def research_workspace_named_transfer(
+    workspace_request: WorkspaceNamedTransferRequest,
+    http_request: Request,
+    account: Annotated[AuthenticatedAccount, Depends(authenticated_account)],
+    store: Annotated[ProWorkspaceStore, Depends(get_pro_workspace_store)],
+    loader: Annotated[ProResearchLoader, Depends(get_pro_research_loader)],
+) -> WorkspaceResearchResult:
+    """Run and persist named-transfer research against server-owned squad state."""
+
+    try:
+        squad_state_id, squad = store.current_squad(account.id)
+        if workspace_request.outgoing_player_id not in squad.player_ids:
+            raise ValueError("The outgoing player is not in the confirmed squad.")
+        research_request = NamedTransferResearchRequest(
+            squad=squad,
+            outgoing_player_id=workspace_request.outgoing_player_id,
+            outgoing_selling_price_tenths=(workspace_request.outgoing_selling_price_tenths),
+            target_player_id=workspace_request.target_player_id,
+            question=workspace_request.question,
+        )
+        research = await research_named_transfer(research_request, http_request, loader)
+        workspace = store.save_named_transfer_report(
+            account.id,
+            squad_state_id,
+            workspace_request.question,
+            research,
+        )
+        return WorkspaceResearchResult(research=research, workspace=workspace)
+    except WorkspaceStateRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "workspace_state_required", "message": str(error)},
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_workspace_research", "message": str(error)},
+        ) from error
 
 
 @app.post(
