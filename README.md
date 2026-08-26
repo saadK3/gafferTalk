@@ -138,6 +138,15 @@ reserve bank and search at most two transfers. GafferTalk requests only the rele
 outgoing selling prices before returning an exact route, hit and resulting bank. See
 the [Pro route-research architecture](docs/architecture/pro-route-research.md).
 
+The signed-in Pro workspace is available at
+`http://localhost:3000/pro/sign-in`. Passwordless email OTP authentication is
+provided by Supabase. After signing in, a manager connects a public FPL Team ID,
+records any post-deadline changes plus bank and free transfers, and confirms a
+versioned planning state. Named-transfer reports and their visible conversation
+history are stored account-by-account in PostgreSQL and reopen after sign-out and
+sign-in. Start and configure the local services with the
+[Supabase Pro workspace runbook](docs/operations/supabase-pro-workspace.md).
+
 The API is prepared for a private Railway staging service while the web
 application remains on Cloudflare. See the
 [Railway API runbook](docs/operations/railway-api.md) for the monorepo paths,
@@ -151,6 +160,9 @@ POST /v1/recommendations/transfers
 POST /v1/recommendations/conversation
 POST /v1/pro/research/named-transfer
 POST /v1/pro/research/squad-action
+GET /v1/pro/workspace
+PUT /v1/pro/workspace/state
+POST /v1/pro/workspace/research/named-transfer
 GET /v1/free/usage
 ```
 

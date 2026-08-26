@@ -33,3 +33,7 @@ build/
 *.log
 *.sqlite
 *.sqlite3
+
+# Supabase CLI local state and generated secrets
+supabase/.branches/
+supabase/.temp/

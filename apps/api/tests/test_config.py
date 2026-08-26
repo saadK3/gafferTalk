@@ -10,6 +10,8 @@ def deployment_settings(**overrides: object) -> Settings:
         "cors_origins": "https://staging.gaffertalk.com",
         "groq_api_key": "test-only-key",
         "free_usage_database_path": "/data/gaffertalk.sqlite3",
+        "database_url": "postgresql://example.invalid/gaffertalk",
+        "supabase_url": "https://example.supabase.co",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -31,6 +33,8 @@ def test_staging_configuration_accepts_exact_https_origins_and_persistent_path()
     [
         ({"groq_api_key": ""}, "GAFFERTALK_GROQ_API_KEY"),
         ({"free_usage_database_path": ".data/usage.sqlite3"}, "absolute persistent"),
+        ({"database_url": ""}, "GAFFERTALK_DATABASE_URL"),
+        ({"supabase_url": "http://example.supabase.co"}, "HTTPS GAFFERTALK_SUPABASE_URL"),
         ({"cors_origins": "http://localhost:3000"}, "exact HTTPS origins"),
         ({"cors_origins": "https://*.gaffertalk.com"}, "exact HTTPS origins"),
         ({"cors_origins": "https://gaffertalk.com/recommend"}, "exact HTTPS origins"),

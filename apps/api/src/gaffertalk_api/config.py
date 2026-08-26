@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     groq_timeout_seconds: float = Field(default=12.0, gt=0, le=30)
     free_question_limit: int = Field(default=3, ge=1, le=20)
     free_usage_database_path: Path = Path(".data/gaffertalk.sqlite3")
+    database_url: str | None = None
+    supabase_url: str | None = None
+    supabase_jwt_audience: str = "authenticated"
 
     @property
     def allowed_origins(self) -> list[str]:
@@ -43,6 +46,10 @@ class Settings(BaseSettings):
             raise ValueError(
                 "staging and production require an absolute persistent usage database path"
             )
+        if not self.database_url or not self.database_url.strip():
+            raise ValueError("staging and production require GAFFERTALK_DATABASE_URL")
+        if not self.supabase_url or not self.supabase_url.startswith("https://"):
+            raise ValueError("staging and production require an HTTPS GAFFERTALK_SUPABASE_URL")
         if not self.allowed_origins:
             raise ValueError("staging and production require at least one CORS origin")
         for origin in self.allowed_origins:

@@ -128,7 +128,7 @@ export function ProSquadActionExperience() {
           <Link href="/pro/squad-action" aria-current="page">Best squad action</Link>
           <Link href="/pro/routes">Route finder</Link>
         </nav>
-        <Link href="/team">Reconfirm team</Link>
+        <Link href="/pro/workspace">Signed-in workspace</Link>
       </header>
 
       <section className={styles.hero}>

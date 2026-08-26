@@ -42,6 +42,9 @@ Railway dashboard and must never be committed.
 | `GAFFERTALK_GROQ_MODEL` | `openai/gpt-oss-20b` | No |
 | `GAFFERTALK_FREE_QUESTION_LIMIT` | `3` | No |
 | `GAFFERTALK_FREE_USAGE_DATABASE_PATH` | `/data/gaffertalk.sqlite3` | No |
+| `GAFFERTALK_DATABASE_URL` | Supabase session-pooler connection string | Yes |
+| `GAFFERTALK_SUPABASE_URL` | Supabase project URL | No |
+| `GAFFERTALK_SUPABASE_JWT_AUDIENCE` | `authenticated` | No |
 
 The existing FPL URL, retry and timeout defaults are appropriate initially.
 Railway provides `PORT`; do not create it manually.
@@ -58,7 +61,8 @@ ephemeral application storage.
 1. Confirm CI is green on the deployment-preparation pull request.
 2. Create a Railway project and an API service from `saadK3/gafferTalk`.
 3. Configure the root and config-file paths listed above.
-4. Add the variables, entering the Groq key only through Railway secrets.
+4. Add the variables, entering the Groq key and database URL only through
+   Railway secrets.
 5. Attach the `/data` volume before the first tester uses the service.
 6. Generate a Railway staging domain and verify `GET /health` returns HTTP 200.
 7. Exercise player search, demo squad, quota status, invalid preflight, and one
@@ -69,6 +73,9 @@ ephemeral application storage.
    `NEXT_PUBLIC_APP_HOST=app.gaffertalk.com`, then test the browser flow.
 10. Inspect Railway logs for secrets, stack traces, upstream errors and CORS
     failures before inviting testers.
+11. Sign in through the preview, confirm one planning-state version, save one
+    report, sign out and back in, and verify the state, report and two messages
+    reopen for the same account.
 
 Deployment and secret entry require explicit repository-owner confirmation.
 
