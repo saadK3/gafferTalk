@@ -11,8 +11,7 @@ def test_railway_requirements_match_project_runtime_dependencies() -> None:
     api_root = Path(__file__).parents[1]
     project = tomllib.loads((api_root / "pyproject.toml").read_text())
     project_dependencies = {
-        dependency_name(requirement)
-        for requirement in project["project"]["dependencies"]
+        dependency_name(requirement) for requirement in project["project"]["dependencies"]
     }
     railway_dependencies = {
         dependency_name(requirement)
