@@ -5,6 +5,11 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from gaffertalk_api.domain.models import DomainModel, Player
+from gaffertalk_api.domain.pro_plans import (
+    PlanDraft,
+    PlanReconciliation,
+    WorkspacePlan,
+)
 from gaffertalk_api.domain.pro_research import NamedTransferResearchResponse, ProDecisionReport
 
 
@@ -99,6 +104,7 @@ class ProWorkspace(DomainModel):
     current_state: ConfirmedPlanningState | None = None
     messages: tuple[WorkspaceMessage, ...] = ()
     reports: tuple[WorkspaceReport, ...] = ()
+    plans: tuple[WorkspacePlan, ...] = ()
 
 
 class WorkspaceNamedTransferRequest(DomainModel):
@@ -116,4 +122,18 @@ class WorkspaceNamedTransferRequest(DomainModel):
 
 class WorkspaceResearchResult(DomainModel):
     research: NamedTransferResearchResponse
+    workspace: ProWorkspace
+
+
+class WorkspacePlanPreviewResult(DomainModel):
+    draft: PlanDraft
+
+
+class WorkspacePlanMutationResult(DomainModel):
+    plan: WorkspacePlan
+    workspace: ProWorkspace
+
+
+class WorkspaceReconciliationResult(DomainModel):
+    reconciliation: PlanReconciliation
     workspace: ProWorkspace

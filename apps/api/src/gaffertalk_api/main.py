@@ -18,6 +18,11 @@ from gaffertalk_api.domain.errors import (
     UpstreamFplUnavailableError,
 )
 from gaffertalk_api.domain.models import Player, Position, SquadLookupResult
+from gaffertalk_api.domain.pro_plans import (
+    PlanFromReportRequest,
+    PlanLifecycleUpdate,
+    PlanReconciliationInput,
+)
 from gaffertalk_api.domain.pro_research import (
     NamedTransferResearchResponse,
     SquadActionResearchResponse,
@@ -26,6 +31,9 @@ from gaffertalk_api.domain.pro_workspace import (
     ConfirmedPlanningStateInput,
     ProWorkspace,
     WorkspaceNamedTransferRequest,
+    WorkspacePlanMutationResult,
+    WorkspacePlanPreviewResult,
+    WorkspaceReconciliationResult,
     WorkspaceResearchResult,
 )
 from gaffertalk_api.domain.recommendation_requests import (
@@ -52,10 +60,13 @@ from gaffertalk_api.services.free_question_usage import (
     select_quota_gameweek,
 )
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
+from gaffertalk_api.services.pro_plan_loader import ProPlanLoader
+from gaffertalk_api.services.pro_plan_service import ProPlanService
 from gaffertalk_api.services.pro_research_loader import ProResearchLoader
 from gaffertalk_api.services.pro_workspace import (
     ProWorkspaceStore,
     WorkspaceStateRequiredError,
+    WorkspaceStateStaleError,
 )
 from gaffertalk_api.services.recommendation_loader import RecommendationLoader
 from gaffertalk_api.services.supabase_auth import (
@@ -95,6 +106,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.player_catalogue = PlayerCatalogueLoader(client)
     application.state.recommendation_loader = RecommendationLoader(client)
     application.state.pro_research_loader = ProResearchLoader(client)
+    application.state.pro_plan_loader = ProPlanLoader(client)
+    application.state.pro_plan_service = ProPlanService()
     application.state.free_usage = FreeQuestionUsageStore(
         settings.free_usage_database_path,
         settings.free_question_limit,
@@ -169,6 +182,14 @@ def get_recommendation_loader(request: Request) -> RecommendationLoader:
 
 def get_pro_research_loader(request: Request) -> ProResearchLoader:
     return request.app.state.pro_research_loader
+
+
+def get_pro_plan_loader(request: Request) -> ProPlanLoader:
+    return request.app.state.pro_plan_loader
+
+
+def get_pro_plan_service(request: Request) -> ProPlanService:
+    return request.app.state.pro_plan_service
 
 
 def get_free_usage(request: Request) -> FreeQuestionUsageStore:
@@ -464,6 +485,11 @@ async def research_workspace_named_transfer(
             research,
         )
         return WorkspaceResearchResult(research=research, workspace=workspace)
+    except WorkspaceStateStaleError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "workspace_state_stale", "message": str(error)},
+        ) from error
     except WorkspaceStateRequiredError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -473,6 +499,147 @@ async def research_workspace_named_transfer(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "invalid_workspace_research", "message": str(error)},
+        ) from error
+
+
+@app.post(
+    "/v1/pro/workspace/plans/preview",
+    response_model=WorkspacePlanPreviewResult,
+    tags=["Pro workspace"],
+)
+async def preview_workspace_plan(
+    plan_request: PlanFromReportRequest,
+    account: Annotated[AuthenticatedAccount, Depends(authenticated_account)],
+    store: Annotated[ProWorkspaceStore, Depends(get_pro_workspace_store)],
+    loader: Annotated[ProPlanLoader, Depends(get_pro_plan_loader)],
+    service: Annotated[ProPlanService, Depends(get_pro_plan_service)],
+) -> WorkspacePlanPreviewResult:
+    """Build a deterministic conditional plan from an account-owned report."""
+
+    try:
+        report, state = store.plan_context(account.id, plan_request.report_id)
+        context = await loader.load(state.team_id)
+        return WorkspacePlanPreviewResult(draft=service.build(report, state, context))
+    except WorkspaceStateStaleError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "workspace_state_stale", "message": str(error)},
+        ) from error
+    except WorkspaceStateRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "workspace_state_required", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_plan_request", "message": str(error)},
+        ) from error
+
+
+@app.post(
+    "/v1/pro/workspace/plans",
+    response_model=WorkspacePlanMutationResult,
+    tags=["Pro workspace"],
+)
+async def save_workspace_plan(
+    plan_request: PlanFromReportRequest,
+    account: Annotated[AuthenticatedAccount, Depends(authenticated_account)],
+    store: Annotated[ProWorkspaceStore, Depends(get_pro_workspace_store)],
+    loader: Annotated[ProPlanLoader, Depends(get_pro_plan_loader)],
+    service: Annotated[ProPlanService, Depends(get_pro_plan_service)],
+) -> WorkspacePlanMutationResult:
+    """Regenerate and save an accepted report as the active plan."""
+
+    try:
+        preview = await preview_workspace_plan(plan_request, account, store, loader, service)
+        workspace = store.save_plan(account.id, preview.draft)
+        return WorkspacePlanMutationResult(plan=workspace.plans[0], workspace=workspace)
+    except WorkspaceStateStaleError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "workspace_state_stale", "message": str(error)},
+        ) from error
+
+
+@app.post(
+    "/v1/pro/workspace/plans/{plan_id}/reconcile",
+    response_model=WorkspaceReconciliationResult,
+    tags=["Pro workspace"],
+)
+async def reconcile_workspace_plan(
+    reconciliation_input: PlanReconciliationInput,
+    plan_id: Annotated[UUID, Path()],
+    account: Annotated[AuthenticatedAccount, Depends(authenticated_account)],
+    store: Annotated[ProWorkspaceStore, Depends(get_pro_workspace_store)],
+    loader: Annotated[ProPlanLoader, Depends(get_pro_plan_loader)],
+    service: Annotated[ProPlanService, Depends(get_pro_plan_service)],
+) -> WorkspaceReconciliationResult:
+    """Compare a saved plan with the newest public and manager-confirmed state."""
+
+    try:
+        plan = store.get_plan(account.id, plan_id)
+        workspace = store.get(account.id)
+        if workspace.current_state is None:
+            raise WorkspaceStateRequiredError("Confirm your current squad before reconciling.")
+        context = await loader.load(workspace.current_state.team_id)
+        reconciliation = service.reconcile(
+            plan,
+            workspace.current_state,
+            context,
+            reconciliation_input,
+            checked_at=datetime.now(UTC),
+        )
+        updated = store.apply_reconciliation(account.id, reconciliation)
+        return WorkspaceReconciliationResult(
+            reconciliation=reconciliation,
+            workspace=updated,
+        )
+    except WorkspaceStateRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "workspace_state_required", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_plan_reconciliation", "message": str(error)},
+        ) from error
+
+
+@app.patch(
+    "/v1/pro/workspace/plans/{plan_id}",
+    response_model=ProWorkspace,
+    tags=["Pro workspace"],
+)
+async def update_workspace_plan_lifecycle(
+    lifecycle_update: PlanLifecycleUpdate,
+    plan_id: Annotated[UUID, Path()],
+    account: Annotated[AuthenticatedAccount, Depends(authenticated_account)],
+    store: Annotated[ProWorkspaceStore, Depends(get_pro_workspace_store)],
+) -> ProWorkspace:
+    """Mark an account-owned plan completed or abandoned without deleting history."""
+
+    try:
+        return store.update_plan_lifecycle(account.id, plan_id, lifecycle_update)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_plan_lifecycle", "message": str(error)},
         ) from error
 
 

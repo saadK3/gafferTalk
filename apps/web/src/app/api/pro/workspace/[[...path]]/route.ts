@@ -6,7 +6,24 @@ const allowedPaths = new Map([
   ["GET:", "/v1/pro/workspace"],
   ["PUT:state", "/v1/pro/workspace/state"],
   ["POST:research/named-transfer", "/v1/pro/workspace/research/named-transfer"],
+  ["POST:plans/preview", "/v1/pro/workspace/plans/preview"],
+  ["POST:plans", "/v1/pro/workspace/plans"],
 ]);
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function resolveTargetPath(method: string, path: string[]): string | undefined {
+  const fixed = allowedPaths.get(`${method}:${path.join("/")}`);
+  if (fixed) return fixed;
+  if (path[0] !== "plans" || !path[1] || !UUID_PATTERN.test(path[1])) return undefined;
+  if (method === "POST" && path.length === 3 && path[2] === "reconcile") {
+    return `/v1/pro/workspace/plans/${path[1]}/reconcile`;
+  }
+  if (method === "PATCH" && path.length === 2) {
+    return `/v1/pro/workspace/plans/${path[1]}`;
+  }
+  return undefined;
+}
 
 function apiBaseUrl(): string {
   return (
@@ -18,7 +35,7 @@ function apiBaseUrl(): string {
 
 async function forward(request: Request, context: Context): Promise<Response> {
   const { path = [] } = await context.params;
-  const targetPath = allowedPaths.get(`${request.method}:${path.join("/")}`);
+  const targetPath = resolveTargetPath(request.method, path);
   if (!targetPath) return Response.json({ detail: "Not found" }, { status: 404 });
 
   const supabase = await createSupabaseServerClient();
@@ -70,5 +87,9 @@ export function PUT(request: Request, context: Context) {
 }
 
 export function POST(request: Request, context: Context) {
+  return forward(request, context);
+}
+
+export function PATCH(request: Request, context: Context) {
   return forward(request, context);
 }
