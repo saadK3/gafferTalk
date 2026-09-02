@@ -13,9 +13,16 @@ import {
 import {
   confirmProWorkspaceState,
   loadProWorkspace,
+  previewWorkspacePlan,
   ProWorkspaceApiError,
+  reconcileWorkspacePlan,
   researchWorkspaceNamedTransfer,
+  saveWorkspacePlan,
+  updateWorkspacePlanLifecycle,
+  type PlanDraft,
+  type PlanReconciliation,
   type ProWorkspace,
+  type WorkspacePlan,
   type WorkspaceReport,
 } from "@/lib/pro-workspace-api";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -263,6 +270,66 @@ function ReportView({ report }: { report: WorkspaceReport }) {
   );
 }
 
+function PlanTimeline({ plan }: { plan: PlanDraft | WorkspacePlan }) {
+  return (
+    <div className={styles.planTimeline}>
+      {plan.actions.map((action) => (
+        <article key={`${action.sequence}-${action.kind}`}>
+          <div><span>GW{action.gameweek_id} · {action.kind.replaceAll("_", " ")}</span><b>{action.sequence}</b></div>
+          <h3>{action.headline}</h3>
+          <p>{action.condition}</p>
+          <small>{money(action.expected_bank_after_tenths)} expected bank · {action.expected_free_transfers_after} FT</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function SavedPlanView({
+  plan,
+  stateBank,
+  stateFreeTransfers,
+  busy,
+  reconciliation,
+  onReconcile,
+  onLifecycle,
+}: {
+  plan: WorkspacePlan;
+  stateBank: number;
+  stateFreeTransfers: number;
+  busy: boolean;
+  reconciliation: PlanReconciliation | null;
+  onReconcile: (input: { bank_tenths: number; free_transfers: number; relevant_selling_price_tenths: number }) => void;
+  onLifecycle: (lifecycle: "completed" | "abandoned") => void;
+}) {
+  const [bank, setBank] = useState(String(stateBank / 10));
+  const [freeTransfers, setFreeTransfers] = useState(String(stateFreeTransfers));
+  const [sellingPrice, setSellingPrice] = useState(String(plan.relevant_selling_price_tenths / 10));
+  return (
+    <section className={`${styles.planCard} ${plan.lifecycle === "stale" ? styles.stalePlan : ""}`}>
+      <header>
+        <div><span>Plan v{plan.version} · squad state v{plan.squad_state_version}</span><h2>GW{plan.horizon_gameweeks[0]}–{plan.horizon_gameweeks[2]}</h2></div>
+        <b>{plan.lifecycle}</b>
+        <p>Five-Gameweek evidence · three-Gameweek conditional horizon · {plan.confidence} confidence</p>
+      </header>
+      {plan.stale_reasons.length ? <div className={styles.staleReasons}><strong>Recalculation required</strong><p>{plan.stale_reasons.map((reason) => reason.replaceAll("_", " ")).join(" · ")}</p></div> : null}
+      <PlanTimeline plan={plan} />
+      <details><summary>Conditions, alternatives and assumptions</summary><ul>{[...plan.conditions, ...plan.alternatives, ...plan.assumptions].map((item) => <li key={item}>{item}</li>)}</ul></details>
+      {plan.lifecycle === "active" || plan.lifecycle === "stale" ? (
+        <form className={styles.reconcileForm} onSubmit={(event) => { event.preventDefault(); onReconcile({ bank_tenths: Math.round(Number(bank) * 10), free_transfers: Number(freeTransfers), relevant_selling_price_tenths: Math.round(Number(sellingPrice) * 10) }); }}>
+          <div><span>Returning-session check</span><h3>Compare with the newest finalized snapshot</h3><p>Confirm private values that FPL cannot reliably expose before we decide whether this plan is still safe to use.</p></div>
+          <label>Current bank (£m)<input type="number" min="0" max="20" step="0.1" value={bank} onChange={(event) => setBank(event.target.value)} /></label>
+          <label>Free transfers<select value={freeTransfers} onChange={(event) => setFreeTransfers(event.target.value)}>{[0, 1, 2, 3, 4, 5].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>Relevant selling price (£m)<input type="number" min="0" max="30" step="0.1" value={sellingPrice} onChange={(event) => setSellingPrice(event.target.value)} /></label>
+          <button type="submit" disabled={busy}>{busy ? "Checking…" : "Check current evidence"}</button>
+        </form>
+      ) : null}
+      {reconciliation?.plan_id === plan.id ? <div className={reconciliation.materially_stale ? styles.reconcileBlocked : styles.reconcileResult}><strong>{reconciliation.stale_reasons.length ? "Changes detected" : "Plan remains current"}</strong><p>Newest public snapshot: GW{reconciliation.newest_snapshot_gameweek}. {reconciliation.requires_state_confirmation ? "Reconfirm your full planning state before new research." : "No private-state confirmation is required."}</p></div> : null}
+      {plan.lifecycle === "active" || plan.lifecycle === "stale" ? <div className={styles.planLifecycle}><button type="button" onClick={() => onLifecycle("completed")} disabled={busy}>Mark completed</button><button type="button" onClick={() => onLifecycle("abandoned")} disabled={busy}>Abandon plan</button></div> : null}
+    </section>
+  );
+}
+
 function WorkspaceDashboard({ workspace, setWorkspace, onReconfirm }: { workspace: ProWorkspace; setWorkspace: (workspace: ProWorkspace) => void; onReconfirm: () => void }) {
   const state = workspace.current_state!;
   const [outgoingId, setOutgoingId] = useState("");
@@ -272,9 +339,15 @@ function WorkspaceDashboard({ workspace, setWorkspace, onReconfirm }: { workspac
   const [target, setTarget] = useState<ApiPlayer | null>(null);
   const [question, setQuestion] = useState("");
   const [selectedReportId, setSelectedReportId] = useState(workspace.reports[0]?.id ?? "");
+  const [planDraft, setPlanDraft] = useState<PlanDraft | null>(null);
+  const [reconciliation, setReconciliation] = useState<PlanReconciliation | null>(null);
   const [busy, setBusy] = useState(false);
+  const [planBusy, setPlanBusy] = useState(false);
   const [error, setError] = useState("");
+  const [planError, setPlanError] = useState("");
   const selectedReport = workspace.reports.find((report) => report.id === selectedReportId) ?? workspace.reports[0];
+  const currentPlan = workspace.plans.find((plan) => plan.lifecycle === "active" || plan.lifecycle === "stale") ?? workspace.plans[0];
+  const materiallyStale = state.freshness_status === "stale";
 
   const selectOutgoing = (value: string) => {
     setOutgoingId(value);
@@ -333,6 +406,61 @@ function WorkspaceDashboard({ workspace, setWorkspace, onReconfirm }: { workspac
       setBusy(false);
     }
   };
+  const previewPlan = async () => {
+    if (!selectedReport) return;
+    setPlanBusy(true);
+    setPlanError("");
+    try {
+      const result = await previewWorkspacePlan(selectedReport.id);
+      setPlanDraft(result.draft);
+    } catch (caught) {
+      setPlanError(caught instanceof ProWorkspaceApiError ? caught.message : "The plan preview could not be built.");
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+  const savePlan = async () => {
+    if (!selectedReport) return;
+    setPlanBusy(true);
+    setPlanError("");
+    try {
+      const result = await saveWorkspacePlan(selectedReport.id);
+      setWorkspace(result.workspace);
+      setPlanDraft(null);
+      setReconciliation(null);
+    } catch (caught) {
+      setPlanError(caught instanceof ProWorkspaceApiError ? caught.message : "The plan could not be saved.");
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+  const reconcilePlan = async (input: { bank_tenths: number; free_transfers: number; relevant_selling_price_tenths: number }) => {
+    if (!currentPlan) return;
+    setPlanBusy(true);
+    setPlanError("");
+    try {
+      const result = await reconcileWorkspacePlan(currentPlan.id, input);
+      setWorkspace(result.workspace);
+      setReconciliation(result.reconciliation);
+    } catch (caught) {
+      setPlanError(caught instanceof ProWorkspaceApiError ? caught.message : "The plan could not be reconciled.");
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+  const changePlanLifecycle = async (lifecycle: "completed" | "abandoned") => {
+    if (!currentPlan) return;
+    setPlanBusy(true);
+    setPlanError("");
+    try {
+      setWorkspace(await updateWorkspacePlanLifecycle(currentPlan.id, lifecycle));
+      setReconciliation(null);
+    } catch (caught) {
+      setPlanError(caught instanceof ProWorkspaceApiError ? caught.message : "The plan could not be updated.");
+    } finally {
+      setPlanBusy(false);
+    }
+  };
 
   return (
     <main className={styles.workspace}>
@@ -345,8 +473,11 @@ function WorkspaceDashboard({ workspace, setWorkspace, onReconfirm }: { workspac
         <aside className={styles.sidebar}>
           <section><span>Current squad</span><div className={styles.compactSquad}>{state.players.map((player) => <div key={player.id}><strong>{player.web_name}</strong><small>{player.position} · {money(player.current_price.tenths)}</small></div>)}</div></section>
           <section><span>Report history</span>{workspace.reports.length ? <div className={styles.history}>{workspace.reports.map((report) => <button className={report.id === selectedReport?.id ? styles.active : ""} type="button" key={report.id} onClick={() => setSelectedReportId(report.id)}><strong>v{report.version} · {report.report.requested_route.outgoing.web_name} → {report.report.requested_route.incoming.web_name}</strong><small>{timestamp(report.created_at)} · {report.report.verdict}</small></button>)}</div> : <p>No saved reports yet.</p>}</section>
+          <section><span>Plan history</span>{workspace.plans.length ? <div className={styles.planHistory}>{workspace.plans.map((plan) => <div key={plan.id}><strong>v{plan.version} · GW{plan.horizon_gameweeks[0]}–{plan.horizon_gameweeks[2]}</strong><small>{plan.lifecycle} · report v{plan.report_version}</small></div>)}</div> : <p>No saved plans yet.</p>}</section>
         </aside>
         <div className={styles.researchArea}>
+          {materiallyStale ? <section className={styles.materialBlock}><strong>Planning state needs confirmation</strong><p>A material change was detected. New research is blocked until you update and confirm the current squad, bank and free transfers.</p><button type="button" onClick={onReconfirm}>Reconcile current state</button></section> : null}
+          {currentPlan ? <SavedPlanView plan={currentPlan} stateBank={state.bank_tenths} stateFreeTransfers={state.free_transfers} busy={planBusy} reconciliation={reconciliation} onReconcile={reconcilePlan} onLifecycle={changePlanLifecycle} /> : null}
           <form className={styles.researchCard} onSubmit={runResearch}>
             <div><span>Ask about a named transfer</span><h2>Make the case. Challenge the move.</h2></div>
             <div className={styles.researchFields}>
@@ -357,10 +488,10 @@ function WorkspaceDashboard({ workspace, setWorkspace, onReconfirm }: { workspac
             {targets.length ? <div className={styles.candidates}>{targets.map((player) => <button type="button" key={player.id} onClick={() => chooseTarget(player)}><strong>{player.web_name}</strong><span>{player.club.short_name} · {money(player.current_price.tenths)}</span></button>)}</div> : null}
             {target ? <p className={styles.selectedTarget}>Target: <strong>{target.web_name}</strong> · {money(target.current_price.tenths)}</p> : null}
             <label>Question<textarea value={question} onChange={(event) => setQuestion(event.target.value)} minLength={3} maxLength={500} required /></label>
-            <button className={styles.primary} type="submit" disabled={!target || busy}>{busy ? "Researching…" : "Run and save research"}</button>
+            <button className={styles.primary} type="submit" disabled={!target || busy || materiallyStale}>{busy ? "Researching…" : materiallyStale ? "Reconfirm state to research" : "Run and save research"}</button>
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
           </form>
-          {selectedReport ? <ReportView report={selectedReport} /> : <section className={styles.emptyReport}><span>Durable decision reports</span><h2>Your first saved report will appear here.</h2><p>It will remain attached to this exact squad-state version when you return on another authenticated session.</p></section>}
+          {selectedReport ? <><ReportView report={selectedReport} /><section className={styles.planBuilder}><div><span>Conditional planning</span><h2>Turn this report into a bounded 3GW plan.</h2><p>The next five Gameweeks inform the evidence. The plan prescribes only this Gameweek and the following two.</p></div><button type="button" onClick={previewPlan} disabled={planBusy || materiallyStale || selectedReport.squad_state_version !== state.version}>{planBusy ? "Building…" : "Preview conditional plan"}</button>{planDraft ? <div className={styles.planPreview}><header><strong>Preview · GW{planDraft.horizon_gameweeks[0]}–{planDraft.horizon_gameweeks[2]}</strong><small>{planDraft.confidence} confidence · evidence GW{planDraft.evidence_gameweeks.join(", ")}</small></header><PlanTimeline plan={planDraft} /><button className={styles.primary} type="button" onClick={savePlan} disabled={planBusy}>{workspace.plans.length ? "Save recalculated plan" : "Save as active plan"}</button></div> : null}{planError ? <p className={styles.error} role="alert">{planError}</p> : null}</section></> : <section className={styles.emptyReport}><span>Durable decision reports</span><h2>Your first saved report will appear here.</h2><p>It will remain attached to this exact squad-state version when you return on another authenticated session.</p></section>}
           <section className={styles.conversation}><span>Visible conversation history</span>{workspace.messages.length ? workspace.messages.map((message) => <article className={message.role === "user" ? styles.userMessage : styles.assistantMessage} key={message.id}><strong>{message.role === "user" ? "You" : "GafferTalk"}</strong><p>{message.content}</p><small>{timestamp(message.created_at)}</small></article>) : <p>No messages saved yet.</p>}</section>
         </div>
       </div>

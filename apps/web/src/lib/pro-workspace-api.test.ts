@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadProWorkspace,
+  previewWorkspacePlan,
   ProWorkspaceApiError,
+  reconcileWorkspacePlan,
   researchWorkspaceNamedTransfer,
+  saveWorkspacePlan,
+  updateWorkspacePlanLifecycle,
 } from "./pro-workspace-api";
 
 afterEach(() => {
@@ -16,6 +20,7 @@ describe("Pro workspace BFF client", () => {
       current_state: null,
       messages: [],
       reports: [],
+      plans: [],
     };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(workspace), {
@@ -66,5 +71,33 @@ describe("Pro workspace BFF client", () => {
     await expect(loadProWorkspace()).rejects.toEqual(
       new ProWorkspaceApiError("Sign in again.", 401, "invalid_access_token"),
     );
+  });
+
+  it("uses explicit same-origin plan lifecycle routes", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ draft: {}, plan: {}, workspace: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const reportId = "11111111-1111-4111-8111-111111111111";
+    const planId = "22222222-2222-4222-8222-222222222222";
+
+    await previewWorkspacePlan(reportId);
+    await saveWorkspacePlan(reportId);
+    await reconcileWorkspacePlan(planId, {
+      bank_tenths: 10,
+      free_transfers: 1,
+      relevant_selling_price_tenths: 120,
+    });
+    await updateWorkspacePlanLifecycle(planId, "completed");
+
+    expect(fetchMock.mock.calls.map(([path, options]) => [path, options.method])).toEqual([
+      ["/api/pro/workspace/plans/preview", "POST"],
+      ["/api/pro/workspace/plans", "POST"],
+      [`/api/pro/workspace/plans/${planId}/reconcile`, "POST"],
+      [`/api/pro/workspace/plans/${planId}`, "PATCH"],
+    ]);
   });
 });

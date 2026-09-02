@@ -68,7 +68,8 @@ cross-session journeys are covered before dependency upgrades.
 
 ## Out of scope
 
-This decision does not add billing, commercial subscription lifecycle,
-three-Gameweek plan persistence or public account deletion UI. Issue #49 owns
-commercial entitlement enforcement; the wider account-control lifecycle is
-qualified before private beta.
+This decision does not add billing, commercial subscription lifecycle or public
+account deletion UI. Conditional plan persistence extends this workspace in
+`docs/architecture/pro-conditional-plans.md`. Issue #49 owns commercial
+entitlement enforcement; the wider account-control lifecycle is qualified before
+private beta.

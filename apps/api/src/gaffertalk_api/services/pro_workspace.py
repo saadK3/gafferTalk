@@ -24,6 +24,15 @@ from sqlalchemy.engine import Engine, RowMapping
 from sqlalchemy.pool import StaticPool
 
 from gaffertalk_api.domain.models import Player
+from gaffertalk_api.domain.pro_plans import (
+    MATERIAL_STATE_REASONS,
+    PlanDraft,
+    PlanLifecycle,
+    PlanLifecycleUpdate,
+    PlanReconciliation,
+    PlanStaleReason,
+    WorkspacePlan,
+)
 from gaffertalk_api.domain.pro_research import NamedTransferResearchResponse, ProDecisionReport
 from gaffertalk_api.domain.pro_workspace import (
     ConfirmedPlanningState,
@@ -149,12 +158,47 @@ reports = Table(
     UniqueConstraint("conversation_id", "version"),
 )
 
+plans = Table(
+    "workspace_plans",
+    metadata,
+    Column("id", Uuid(as_uuid=True), primary_key=True),
+    Column(
+        "workspace_id",
+        Uuid(as_uuid=True),
+        ForeignKey("pro_workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("report_id", Uuid(as_uuid=True), ForeignKey("decision_reports.id"), nullable=False),
+    Column(
+        "squad_state_id",
+        Uuid(as_uuid=True),
+        ForeignKey("squad_state_versions.id"),
+        nullable=False,
+    ),
+    Column("version", Integer, nullable=False),
+    Column("lifecycle", String(24), nullable=False),
+    Column("plan_data", JSON, nullable=False),
+    Column("stale_reasons", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("activated_at", DateTime(timezone=True), nullable=False),
+    Column("stale_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("superseded_at", DateTime(timezone=True), nullable=True),
+    Column("abandoned_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("workspace_id", "version"),
+)
+
 
 class WorkspaceNotConfiguredError(RuntimeError):
     pass
 
 
 class WorkspaceStateRequiredError(ValueError):
+    pass
+
+
+class WorkspaceStateStaleError(ValueError):
     pass
 
 
@@ -262,6 +306,19 @@ class ProWorkspaceStore:
                 )
                 .values(current_squad_state_id=state_id, updated_at=now)
             )
+            connection.execute(
+                update(plans)
+                .where(
+                    plans.c.workspace_id == workspace_id,
+                    plans.c.lifecycle == PlanLifecycle.ACTIVE.value,
+                )
+                .values(
+                    lifecycle=PlanLifecycle.STALE.value,
+                    stale_reasons=[PlanStaleReason.SQUAD_STATE_CHANGED.value],
+                    stale_at=now,
+                    updated_at=now,
+                )
+            )
             conversation = connection.execute(
                 select(conversations.c.id).where(conversations.c.workspace_id == workspace_id)
             ).first()
@@ -281,6 +338,11 @@ class ProWorkspaceStore:
         row = self._current_state_row(account_id)
         if row is None:
             raise WorkspaceStateRequiredError("Confirm your current squad before running research.")
+        if str(row["freshness_status"]) == "stale":
+            raise WorkspaceStateStaleError(
+                "Your saved squad state is materially stale. Reconcile and reconfirm it before "
+                "running new research."
+            )
         positions = {
             int(key): int(value) for key, value in _mapping(row["squad_positions"]).items()
         }
@@ -386,6 +448,181 @@ class ProWorkspaceStore:
             )
         return self.get(account_id)
 
+    def plan_context(
+        self, account_id: UUID, report_id: UUID
+    ) -> tuple[WorkspaceReport, ConfirmedPlanningState]:
+        workspace = self.get(account_id)
+        if workspace.current_state is None:
+            raise WorkspaceStateRequiredError("Confirm your current squad before building a plan.")
+        report = next((item for item in workspace.reports if item.id == report_id), None)
+        if report is None:
+            raise ValueError("The selected report does not belong to this workspace.")
+        if report.squad_state_version != workspace.current_state.version:
+            raise WorkspaceStateStaleError(
+                "The selected report predates the current squad. Run fresh research first."
+            )
+        return report, workspace.current_state
+
+    def save_plan(self, account_id: UUID, draft: PlanDraft) -> ProWorkspace:
+        now = datetime.now(UTC)
+        with self.engine.begin() as connection:
+            context = (
+                connection.execute(
+                    select(workspaces.c.id.label("workspace_id"))
+                    .select_from(
+                        workspaces.join(
+                            conversations,
+                            conversations.c.workspace_id == workspaces.c.id,
+                        )
+                        .join(reports, reports.c.conversation_id == conversations.c.id)
+                        .join(squad_states, squad_states.c.id == reports.c.squad_state_id)
+                    )
+                    .where(
+                        workspaces.c.account_id == account_id,
+                        reports.c.id == draft.report_id,
+                        squad_states.c.id == draft.squad_state_id,
+                        workspaces.c.current_squad_state_id == squad_states.c.id,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if context is None:
+                raise WorkspaceStateStaleError(
+                    "The report or confirmed squad changed before the plan could be saved."
+                )
+            workspace_id = cast(UUID, context["workspace_id"])
+            connection.execute(
+                update(plans)
+                .where(
+                    plans.c.workspace_id == workspace_id,
+                    plans.c.lifecycle.in_([PlanLifecycle.ACTIVE.value, PlanLifecycle.STALE.value]),
+                )
+                .values(
+                    lifecycle=PlanLifecycle.SUPERSEDED.value,
+                    superseded_at=now,
+                    updated_at=now,
+                )
+            )
+            current_version = connection.scalar(
+                select(func.max(plans.c.version)).where(plans.c.workspace_id == workspace_id)
+            )
+            connection.execute(
+                insert(plans).values(
+                    id=uuid4(),
+                    workspace_id=workspace_id,
+                    report_id=draft.report_id,
+                    squad_state_id=draft.squad_state_id,
+                    version=int(current_version or 0) + 1,
+                    lifecycle=PlanLifecycle.ACTIVE.value,
+                    plan_data=draft.model_dump(mode="json"),
+                    stale_reasons=[],
+                    created_at=now,
+                    updated_at=now,
+                    activated_at=now,
+                    stale_at=None,
+                    completed_at=None,
+                    superseded_at=None,
+                    abandoned_at=None,
+                )
+            )
+        return self.get(account_id)
+
+    def get_plan(self, account_id: UUID, plan_id: UUID) -> WorkspacePlan:
+        workspace = self.get(account_id)
+        plan = next((item for item in workspace.plans if item.id == plan_id), None)
+        if plan is None:
+            raise ValueError("The selected plan does not belong to this workspace.")
+        return plan
+
+    def apply_reconciliation(
+        self,
+        account_id: UUID,
+        reconciliation: PlanReconciliation,
+    ) -> ProWorkspace:
+        now = reconciliation.checked_at
+        with self.engine.begin() as connection:
+            owned_plan = (
+                connection.execute(
+                    select(
+                        plans.c.id,
+                        plans.c.squad_state_id,
+                        workspaces.c.current_squad_state_id,
+                    )
+                    .select_from(plans.join(workspaces, workspaces.c.id == plans.c.workspace_id))
+                    .where(
+                        workspaces.c.account_id == account_id,
+                        plans.c.id == reconciliation.plan_id,
+                        plans.c.lifecycle.in_(
+                            [PlanLifecycle.ACTIVE.value, PlanLifecycle.STALE.value]
+                        ),
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if owned_plan is None:
+                raise ValueError("Only the current active or stale plan can be reconciled.")
+            lifecycle = (
+                PlanLifecycle.STALE if reconciliation.stale_reasons else PlanLifecycle.ACTIVE
+            )
+            connection.execute(
+                update(plans)
+                .where(plans.c.id == reconciliation.plan_id)
+                .values(
+                    lifecycle=lifecycle.value,
+                    stale_reasons=[reason.value for reason in reconciliation.stale_reasons],
+                    stale_at=now if reconciliation.stale_reasons else None,
+                    updated_at=now,
+                )
+            )
+            if any(reason in MATERIAL_STATE_REASONS for reason in reconciliation.stale_reasons):
+                connection.execute(
+                    update(squad_states)
+                    .where(squad_states.c.id == owned_plan["current_squad_state_id"])
+                    .values(freshness_status="stale")
+                )
+        return self.get(account_id)
+
+    def update_plan_lifecycle(
+        self,
+        account_id: UUID,
+        plan_id: UUID,
+        lifecycle_update: PlanLifecycleUpdate,
+    ) -> ProWorkspace:
+        now = datetime.now(UTC)
+        lifecycle = PlanLifecycle(lifecycle_update.lifecycle)
+        timestamp_column = (
+            plans.c.completed_at if lifecycle is PlanLifecycle.COMPLETED else plans.c.abandoned_at
+        )
+        with self.engine.begin() as connection:
+            owned_plan = (
+                connection.execute(
+                    select(plans.c.id, plans.c.lifecycle)
+                    .select_from(plans.join(workspaces, workspaces.c.id == plans.c.workspace_id))
+                    .where(workspaces.c.account_id == account_id, plans.c.id == plan_id)
+                )
+                .mappings()
+                .first()
+            )
+            if owned_plan is None:
+                raise ValueError("The selected plan does not belong to this workspace.")
+            if PlanLifecycle(str(owned_plan["lifecycle"])) not in {
+                PlanLifecycle.ACTIVE,
+                PlanLifecycle.STALE,
+            }:
+                raise ValueError("Only the current active or stale plan can change lifecycle.")
+            connection.execute(
+                update(plans)
+                .where(plans.c.id == plan_id)
+                .values(
+                    lifecycle=lifecycle.value,
+                    updated_at=now,
+                    **{timestamp_column.name: now},
+                )
+            )
+        return self.get(account_id)
+
     def get(self, account_id: UUID) -> ProWorkspace:
         account_key = account_id
         with self.engine.connect() as connection:
@@ -409,6 +646,7 @@ class ProWorkspaceStore:
             ).first()
             message_models: tuple[WorkspaceMessage, ...] = ()
             report_models: tuple[WorkspaceReport, ...] = ()
+            plan_models: tuple[WorkspacePlan, ...] = ()
             if conversation is not None:
                 conversation_id = cast(UUID, conversation.id)
                 message_rows = connection.execute(
@@ -426,11 +664,22 @@ class ProWorkspaceStore:
                     .order_by(reports.c.version.desc())
                 ).mappings()
                 report_models = tuple(self._report_model(row) for row in report_rows)
+            workspace_row = connection.execute(
+                select(workspaces.c.id).where(workspaces.c.account_id == account_key)
+            ).first()
+            if workspace_row is not None:
+                plan_rows = connection.execute(
+                    select(plans)
+                    .where(plans.c.workspace_id == workspace_row.id)
+                    .order_by(plans.c.version.desc())
+                ).mappings()
+                plan_models = tuple(self._plan_model(row) for row in plan_rows)
         return ProWorkspace(
             entitlement=str(account.entitlement),
             current_state=self._state_model(state_row) if state_row is not None else None,
             messages=message_models,
             reports=report_models,
+            plans=plan_models,
         )
 
     def _current_state_row(self, account_id: UUID) -> RowMapping | None:
@@ -500,6 +749,26 @@ class ProWorkspaceStore:
             squad_state_version=int(row["squad_state_version"]),
             created_at=cast(datetime, row["created_at"]),
             data_retrieved_at=cast(datetime, row["data_retrieved_at"]),
+        )
+
+    @staticmethod
+    def _plan_model(row: RowMapping) -> WorkspacePlan:
+        draft = PlanDraft.model_validate(row["plan_data"])
+        return WorkspacePlan(
+            **draft.model_dump(),
+            id=UUID(str(row["id"])),
+            version=int(row["version"]),
+            lifecycle=PlanLifecycle(str(row["lifecycle"])),
+            stale_reasons=tuple(
+                PlanStaleReason(str(reason)) for reason in _sequence(row["stale_reasons"])
+            ),
+            created_at=cast(datetime, row["created_at"]),
+            updated_at=cast(datetime, row["updated_at"]),
+            activated_at=cast(datetime, row["activated_at"]),
+            stale_at=cast(datetime | None, row["stale_at"]),
+            completed_at=cast(datetime | None, row["completed_at"]),
+            superseded_at=cast(datetime | None, row["superseded_at"]),
+            abandoned_at=cast(datetime | None, row["abandoned_at"]),
         )
 
 

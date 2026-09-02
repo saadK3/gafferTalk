@@ -144,7 +144,12 @@ provided by Supabase. After signing in, a manager connects a public FPL Team ID,
 records any post-deadline changes plus bank and free transfers, and confirms a
 versioned planning state. Named-transfer reports and their visible conversation
 history are stored account-by-account in PostgreSQL and reopen after sign-out and
-sign-in. Start and configure the local services with the
+sign-in. An accepted report can be previewed and saved as a conditional
+three-Gameweek plan informed by five Gameweeks of fixture evidence. Saved plans
+retain their history and become visibly stale when squad, financial, player,
+fixture or deadline evidence changes. See the
+[conditional-plan architecture](docs/architecture/pro-conditional-plans.md).
+Start and configure the local services with the
 [Supabase Pro workspace runbook](docs/operations/supabase-pro-workspace.md).
 
 The API is prepared for a private Railway staging service while the web
@@ -163,6 +168,10 @@ POST /v1/pro/research/squad-action
 GET /v1/pro/workspace
 PUT /v1/pro/workspace/state
 POST /v1/pro/workspace/research/named-transfer
+POST /v1/pro/workspace/plans/preview
+POST /v1/pro/workspace/plans
+POST /v1/pro/workspace/plans/{plan_id}/reconcile
+PATCH /v1/pro/workspace/plans/{plan_id}
 GET /v1/free/usage
 ```
 
