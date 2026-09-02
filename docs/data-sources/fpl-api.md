@@ -157,16 +157,30 @@ Observed on 2026-08-22 after the Gameweek 1 deadline:
   open Gameweek 2 transfer window. An empty response cannot distinguish a
   manager with no transfer from a transfer withheld until the next deadline.
 
+Observed on 2026-09-02 after Gameweek 2 was marked both `finished` and
+`data_checked`, and before the Gameweek 3 deadline:
+
+- A transient sample of 50 public entries returned 17 Gameweek 2 transfers and
+  zero Gameweek 3 transfers. No entry identifiers, names or raw payloads were
+  retained.
+- The released records included `element_in`, `element_in_cost`, `element_out`,
+  `element_out_cost`, `entry`, `event` and `time`.
+- Sampled Gameweek 2 records carried transfer timestamps before the Gameweek 2
+  deadline and were publicly available after finalization. This confirms that
+  the endpoint is deadline-gated history rather than live private transfer state.
+- The cost fields are the prices recorded for that transfer. They do not expose
+  the manager's authoritative current selling price for future moves.
+
 The following assumptions are intentionally **not** marked verified yet:
 
 - The exact release minute for picks relative to a deadline
-- When newly made public transfers become visible relative to the next deadline
+- The exact release minute for transfers after the deadline
 - Blank, double, or rescheduled Gameweek behavior
 
-The successful picks shape is now covered by a sanitized contract fixture. The
-transfer-release timing must be checked again immediately after the Gameweek 2
-deadline using a manager known to have made a transfer, without retaining
-manager identity or an unsanitized response.
+The successful picks and released-transfer shapes are covered by sanitized
+contract fixtures. A pre-/post-Gameweek 3 observation is used to narrow the
+remaining transfer-release latency without retaining manager identity or an
+unsanitized response.
 
 ## Caching, browser access, and throttling
 
