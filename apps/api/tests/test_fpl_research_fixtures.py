@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from gaffertalk_api.integrations.fpl.schemas import FplEntry, FplPicks
+from pydantic import TypeAdapter
+
+from gaffertalk_api.integrations.fpl.schemas import FplEntry, FplPicks, FplTransfer
 
 FIXTURE_DIRECTORY = Path(__file__).parents[3] / "tests" / "fixtures" / "fpl"
 FORBIDDEN_MANAGER_FIELDS = {
@@ -66,3 +68,14 @@ def test_post_deadline_picks_match_the_observed_contract() -> None:
     assert entry.last_deadline_value == picks.entry_history.value
     assert all("purchase_price" not in pick for pick in picks_payload["picks"])
     assert all("selling_price" not in pick for pick in picks_payload["picks"])
+
+
+def test_post_deadline_transfers_match_the_observed_contract() -> None:
+    payload = load_fixture(FIXTURE_DIRECTORY / "entry-transfers.sample.json")
+    transfers = TypeAdapter(list[FplTransfer]).validate_python(payload)
+
+    assert len(transfers) == 1
+    assert transfers[0].event == 2
+    assert transfers[0].time.isoformat() == "2026-08-28T16:45:00+00:00"
+    assert isinstance(payload[0]["element_in_cost"], int)
+    assert isinstance(payload[0]["element_out_cost"], int)
