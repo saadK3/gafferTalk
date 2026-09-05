@@ -89,7 +89,8 @@ class NamedTargetAgentService:
     def has_named_target_intent(question: str) -> bool:
         return bool(
             re.search(
-                r"\b(?:get|bring\s+in|buy|sign|replace|swap)\b",
+                r"\b(?:get|bring\s+in|buy|sign|replace|swap|afford|fund|funding|"
+                r"free\s+up|release\s+budget|raise\s+money|finance)\b",
                 question,
                 re.IGNORECASE,
             )

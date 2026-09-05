@@ -8,6 +8,10 @@ from gaffertalk_api.domain.agent_research import (
     NamedTargetSynthesisSelection,
 )
 from gaffertalk_api.domain.conversation import TransferIntent
+from gaffertalk_api.domain.general_research import (
+    GeneralResearchReport,
+    GeneralSynthesisSelection,
+)
 from gaffertalk_api.domain.models import Player
 from gaffertalk_api.domain.pro_research import (
     ProDecisionReport,
@@ -253,6 +257,40 @@ class GroqConversationClient:
         selected = [reasons[reason_id] for reason_id in selection.reason_ids]
         if "route" in reasons and "route" not in selection.reason_ids:
             selected.insert(0, reasons["route"])
+        return " ".join(dict.fromkeys(selected))
+
+    async def synthesize_general_report(self, question: str, report: GeneralResearchReport) -> str:
+        """Render a routed report using only its approved reasons."""
+
+        reasons = {reason.id: reason.text for reason in report.grounded_reasons}
+        content = await self._completion(
+            system=(
+                "Select emphasis for a validated FPL research report. Return JSON only with "
+                "the exact supplied status and one to four reason_ids copied from "
+                "available_reason_ids. Do not return players, prices, statistics, fixtures, "
+                "routes, predictions or new claims."
+            ),
+            user=json.dumps(
+                {
+                    "question": question,
+                    "capability": report.capability,
+                    "status": report.status,
+                    "available_reason_ids": list(reasons),
+                }
+            ),
+        )
+        try:
+            selection = GeneralSynthesisSelection.model_validate_json(content)
+        except ValidationError as error:
+            raise ValueError("Groq returned an invalid general research synthesis") from error
+        if selection.status is not report.status:
+            raise ValueError("Groq changed the deterministic general research status")
+        if len(set(selection.reason_ids)) != len(selection.reason_ids):
+            raise ValueError("Groq repeated a general research reason")
+        unknown = set(selection.reason_ids) - set(reasons)
+        if unknown:
+            raise ValueError("Groq selected a reason absent from the general research report")
+        selected = [reasons[reason_id] for reason_id in selection.reason_ids]
         return " ".join(dict.fromkeys(selected))
 
     async def _completion(self, *, system: str, user: str, json_mode: bool = True) -> str:

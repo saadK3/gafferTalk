@@ -22,6 +22,11 @@ from gaffertalk_api.domain.errors import (
     UpstreamFplTimeoutError,
     UpstreamFplUnavailableError,
 )
+from gaffertalk_api.domain.general_research import (
+    GeneralResearchRequest,
+    GeneralResearchResponse,
+    GeneralResearchStatus,
+)
 from gaffertalk_api.domain.models import Player, Position, SquadLookupResult
 from gaffertalk_api.domain.pro_plans import (
     PlanFromReportRequest,
@@ -64,6 +69,7 @@ from gaffertalk_api.services.free_question_usage import (
     FreeQuestionUsageStore,
     select_quota_gameweek,
 )
+from gaffertalk_api.services.general_research_agent import GeneralResearchAgent
 from gaffertalk_api.services.named_target_agent import NamedTargetAgentService
 from gaffertalk_api.services.named_target_agent_loader import NamedTargetAgentLoader
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
@@ -114,6 +120,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.recommendation_loader = RecommendationLoader(client)
     application.state.pro_research_loader = ProResearchLoader(client)
     application.state.named_target_agent_loader = NamedTargetAgentLoader(client)
+    application.state.general_research_agent = GeneralResearchAgent(
+        client,
+        named_target_loader=application.state.named_target_agent_loader,
+        pro_research_loader=application.state.pro_research_loader,
+    )
     application.state.pro_plan_loader = ProPlanLoader(client)
     application.state.pro_plan_service = ProPlanService()
     application.state.free_usage = FreeQuestionUsageStore(
@@ -194,6 +205,10 @@ def get_pro_research_loader(request: Request) -> ProResearchLoader:
 
 def get_named_target_agent_loader(request: Request) -> NamedTargetAgentLoader:
     return request.app.state.named_target_agent_loader
+
+
+def get_general_research_agent(request: Request) -> GeneralResearchAgent:
+    return request.app.state.general_research_agent
 
 
 def get_pro_plan_loader(request: Request) -> ProPlanLoader:
@@ -504,6 +519,72 @@ async def research_named_target_agent(
             detail={"code": "agent_research_unavailable", "message": "Groq is unavailable."},
         ) from error
     return NamedTargetResearchResponse(
+        report=report,
+        assistant_message=assistant_message,
+        provider="groq",
+        model=groq.model,
+    )
+
+
+@app.post(
+    "/v1/agent/research",
+    response_model=GeneralResearchResponse,
+    tags=["Research agent"],
+)
+async def research_general_agent(
+    request: GeneralResearchRequest,
+    http_request: Request,
+    agent: Annotated[GeneralResearchAgent, Depends(get_general_research_agent)],
+) -> GeneralResearchResponse:
+    """Route one natural-language question to the appropriate FPL research capability."""
+
+    try:
+        report = await agent.research(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_general_research_state", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+
+    if report.status is not GeneralResearchStatus.RECOMMENDATION:
+        return GeneralResearchResponse(
+            report=report,
+            assistant_message=report.recommended_action,
+            provider="deterministic",
+            model="none",
+        )
+    groq: GroqConversationClient | None = http_request.app.state.groq_client
+    if groq is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "agent_research_unconfigured",
+                "message": "The research agent needs a configured Groq API key.",
+            },
+        )
+    try:
+        assistant_message = await groq.synthesize_general_report(request.question, report)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "agent_grounding_rejected",
+                "message": "The research summary failed its grounding check.",
+            },
+        ) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "agent_research_unavailable", "message": "Groq is unavailable."},
+        ) from error
+    return GeneralResearchResponse(
         report=report,
         assistant_message=assistant_message,
         provider="groq",
