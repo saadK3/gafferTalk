@@ -22,6 +22,19 @@ TARGET_PATTERNS = (
         r"\bis\s+([a-z0-9 .'-]{2,35}?)\s+(?:a|the)\s+"
         r"(?:(?:good|better|best|viable)\s+)?replacement\b"
     ),
+    re.compile(
+        r"\b(?:afford|fund|finance|funding)\s+(?:for\s+|to\s+)?"
+        r"([a-z0-9 .'-]{2,35}?)(?:[?!,.]|$)"
+    ),
+    re.compile(
+        r"\b(?:budget|money)\b.+?\b(?:for|to)\s+(?:bring\s+in\s+|buy\s+|get\s+)?"
+        r"([a-z0-9 .'-]{2,35}?)(?:[?!,.]|$)"
+    ),
+    re.compile(
+        r"\b(?:free\s+up|release\s+budget|raise(?:\s+\w+){0,3}\s+money)\s+"
+        r"(?:budget\s+)?(?:for\s+|to\s+)?(?:bring\s+in\s+|buy\s+|get\s+)?"
+        r"([a-z0-9 .'-]{2,35}?)(?:[?!,.]|$)"
+    ),
     re.compile(r"\bwhat\s+about\s+([a-z0-9 .'-]{2,35}?)(?:[?!,.]|$)"),
 )
 

@@ -10,6 +10,11 @@ from gaffertalk_api.domain.agent_research import (
     NamedTargetResearchReport,
     NamedTargetResearchStatus,
 )
+from gaffertalk_api.domain.general_research import (
+    GeneralResearchReport,
+    GeneralResearchStatus,
+    ResearchCapability,
+)
 from gaffertalk_api.domain.models import Club, Money, Player, Position
 from gaffertalk_api.domain.pro_research import (
     GroundedReason,
@@ -404,6 +409,103 @@ async def test_named_target_synthesis_can_only_select_validated_reason_ids() -> 
 
     assert answer.startswith("The validated route uses no points hit.")
     assert answer.endswith("The evidence is current.")
+
+
+def general_report() -> GeneralResearchReport:
+    return GeneralResearchReport.model_construct(
+        capability=ResearchCapability.HISTORICAL_ALTERNATIVES,
+        status=GeneralResearchStatus.RECOMMENDATION,
+        recommended_action="Use Palmer as the leading historical alternative.",
+        grounded_reasons=(
+            AgentGroundedReason(
+                id="comparison",
+                text="Palmer has the closest historical output in the compared set.",
+            ),
+            AgentGroundedReason(
+                id="limitation",
+                text="Historical evidence cannot establish future minutes.",
+            ),
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_general_synthesis_can_only_select_validated_reason_ids() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        supplied = json.loads(json.loads(request.content)["messages"][1]["content"])
+        assert supplied["capability"] == "historical_alternatives"
+        assert supplied["status"] == "recommendation"
+        assert supplied["available_reason_ids"] == ["comparison", "limitation"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"status": "recommendation", "reason_ids": ["comparison"]}
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        answer = await client.synthesize_general_report(
+            "Which midfielders have similar output?", general_report()
+        )
+    finally:
+        await http_client.aclose()
+
+    assert answer == "Palmer has the closest historical output in the compared set."
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"status": "unsupported", "reason_ids": ["comparison"]},
+        {"status": "recommendation", "reason_ids": ["invented"]},
+        {"status": "recommendation", "reason_ids": ["comparison", "comparison"]},
+    ],
+)
+async def test_general_synthesis_rejects_changed_or_invented_results(
+    selection: dict[str, object],
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(selection)}}]},
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        with pytest.raises(ValueError, match="changed|absent|repeated"):
+            await client.synthesize_general_report(
+                "Which midfielders have similar output?", general_report()
+            )
+    finally:
+        await http_client.aclose()
 
 
 @pytest.mark.anyio
