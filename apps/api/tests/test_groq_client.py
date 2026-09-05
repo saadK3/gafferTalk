@@ -3,6 +3,13 @@ import json
 import httpx
 import pytest
 
+from gaffertalk_api.domain.agent_research import (
+    GroundedReason as AgentGroundedReason,
+)
+from gaffertalk_api.domain.agent_research import (
+    NamedTargetResearchReport,
+    NamedTargetResearchStatus,
+)
 from gaffertalk_api.domain.models import Club, Money, Player, Position
 from gaffertalk_api.domain.pro_research import (
     GroundedReason,
@@ -19,6 +26,17 @@ from gaffertalk_api.domain.route_research import (
     RouteVerdict,
 )
 from gaffertalk_api.integrations.llm.groq import GroqConversationClient
+
+
+def named_target_report() -> NamedTargetResearchReport:
+    return NamedTargetResearchReport.model_construct(
+        status=NamedTargetResearchStatus.RECOMMENDATION,
+        recommendation_reason="The validated route uses no points hit.",
+        grounded_reasons=(
+            AgentGroundedReason(id="route", text="The validated route uses no points hit."),
+            AgentGroundedReason(id="evidence", text="The evidence is current."),
+        ),
+    )
 
 
 @pytest.mark.anyio
@@ -341,6 +359,89 @@ async def test_route_synthesis_preserves_status_verdict_and_reason_boundary() ->
 
     assert answer.startswith("Confirm Enzo and João Pedro")
     assert answer.endswith("balanced threshold.")
+
+
+@pytest.mark.anyio
+async def test_named_target_synthesis_can_only_select_validated_reason_ids() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        supplied = json.loads(json.loads(request.content)["messages"][1]["content"])
+        assert supplied["status"] == "recommendation"
+        assert supplied["available_reason_ids"] == ["route", "evidence"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "status": "recommendation",
+                                    "reason_ids": ["evidence"],
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        answer = await client.synthesize_named_target_report(
+            "How can I get Haaland?", named_target_report()
+        )
+    finally:
+        await http_client.aclose()
+
+    assert answer.startswith("The validated route uses no points hit.")
+    assert answer.endswith("The evidence is current.")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"status": "unsupported", "reason_ids": ["route"]},
+        {"status": "needs_clarification", "reason_ids": ["route"]},
+        {"status": "recommendation", "reason_ids": ["invented"]},
+        {"status": "recommendation", "reason_ids": ["route", "route"]},
+    ],
+)
+async def test_named_target_synthesis_rejects_changed_or_invented_results(
+    selection: dict[str, object],
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(selection)}}]},
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        with pytest.raises(ValueError, match="changed|absent|repeated"):
+            await client.synthesize_named_target_report(
+                "How can I get Haaland?", named_target_report()
+            )
+    finally:
+        await http_client.aclose()
 
 
 @pytest.mark.anyio

@@ -10,6 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from gaffertalk_api.config import get_settings
+from gaffertalk_api.domain.agent_research import (
+    NamedTargetResearchRequest,
+    NamedTargetResearchResponse,
+    NamedTargetResearchStatus,
+)
 from gaffertalk_api.domain.errors import (
     InvalidTeamIdError,
     InvalidUpstreamFplResponseError,
@@ -59,6 +64,8 @@ from gaffertalk_api.services.free_question_usage import (
     FreeQuestionUsageStore,
     select_quota_gameweek,
 )
+from gaffertalk_api.services.named_target_agent import NamedTargetAgentService
+from gaffertalk_api.services.named_target_agent_loader import NamedTargetAgentLoader
 from gaffertalk_api.services.player_catalogue import PlayerCatalogueLoader
 from gaffertalk_api.services.pro_plan_loader import ProPlanLoader
 from gaffertalk_api.services.pro_plan_service import ProPlanService
@@ -106,6 +113,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.player_catalogue = PlayerCatalogueLoader(client)
     application.state.recommendation_loader = RecommendationLoader(client)
     application.state.pro_research_loader = ProResearchLoader(client)
+    application.state.named_target_agent_loader = NamedTargetAgentLoader(client)
     application.state.pro_plan_loader = ProPlanLoader(client)
     application.state.pro_plan_service = ProPlanService()
     application.state.free_usage = FreeQuestionUsageStore(
@@ -182,6 +190,10 @@ def get_recommendation_loader(request: Request) -> RecommendationLoader:
 
 def get_pro_research_loader(request: Request) -> ProResearchLoader:
     return request.app.state.pro_research_loader
+
+
+def get_named_target_agent_loader(request: Request) -> NamedTargetAgentLoader:
+    return request.app.state.named_target_agent_loader
 
 
 def get_pro_plan_loader(request: Request) -> ProPlanLoader:
@@ -416,6 +428,82 @@ async def research_named_transfer(
             detail={"code": "pro_research_unavailable", "message": "Groq is unavailable."},
         ) from error
     return NamedTransferResearchResponse(
+        report=report,
+        assistant_message=assistant_message,
+        provider="groq",
+        model=groq.model,
+    )
+
+
+@app.post(
+    "/v1/agent/research/named-target",
+    response_model=NamedTargetResearchResponse,
+    tags=["Research agent"],
+)
+async def research_named_target_agent(
+    request: NamedTargetResearchRequest,
+    http_request: Request,
+    loader: Annotated[NamedTargetAgentLoader, Depends(get_named_target_agent_loader)],
+) -> NamedTargetResearchResponse:
+    """Answer one bounded natural-language named-player research question."""
+
+    if not NamedTargetAgentService.has_named_target_intent(request.question):
+        report = NamedTargetAgentService.unsupported_report(
+            request=request, created_at=datetime.now(UTC)
+        )
+        return NamedTargetResearchResponse(
+            report=report,
+            assistant_message=report.recommendation_reason,
+            provider="deterministic",
+            model="none",
+        )
+    try:
+        report = await loader.research(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_agent_research_state", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
+
+    groq: GroqConversationClient | None = http_request.app.state.groq_client
+    if report.status is not NamedTargetResearchStatus.RECOMMENDATION:
+        return NamedTargetResearchResponse(
+            report=report,
+            assistant_message=report.recommendation_reason,
+            provider="deterministic",
+            model="none",
+        )
+    if groq is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "agent_research_unconfigured",
+                "message": "The research agent needs a configured Groq API key.",
+            },
+        )
+    try:
+        assistant_message = await groq.synthesize_named_target_report(request.question, report)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "agent_grounding_rejected",
+                "message": "The research summary failed its grounding check.",
+            },
+        ) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "agent_research_unavailable", "message": "Groq is unavailable."},
+        ) from error
+    return NamedTargetResearchResponse(
         report=report,
         assistant_message=assistant_message,
         provider="groq",

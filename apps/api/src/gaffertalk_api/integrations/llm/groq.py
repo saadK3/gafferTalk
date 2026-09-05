@@ -3,6 +3,10 @@ import json
 import httpx
 from pydantic import ValidationError
 
+from gaffertalk_api.domain.agent_research import (
+    NamedTargetResearchReport,
+    NamedTargetSynthesisSelection,
+)
 from gaffertalk_api.domain.conversation import TransferIntent
 from gaffertalk_api.domain.models import Player
 from gaffertalk_api.domain.pro_research import (
@@ -211,6 +215,43 @@ class GroqConversationClient:
             raise ValueError("Groq selected a reason absent from the route report")
         selected = [reasons[reason_id] for reason_id in selection.reason_ids]
         if "route" not in selection.reason_ids:
+            selected.insert(0, reasons["route"])
+        return " ".join(dict.fromkeys(selected))
+
+    async def synthesize_named_target_report(
+        self, question: str, report: NamedTargetResearchReport
+    ) -> str:
+        """Render a named-target report without allowing the model to change its facts."""
+
+        reasons = {reason.id: reason.text for reason in report.grounded_reasons}
+        content = await self._completion(
+            system=(
+                "Select emphasis for a validated FPL named-player research report. Return "
+                "JSON only with the exact supplied status and one to four reason_ids copied "
+                "from available_reason_ids. Do not return players, prices, statistics, "
+                "fixtures, routes, predictions or new claims."
+            ),
+            user=json.dumps(
+                {
+                    "question": question,
+                    "status": report.status,
+                    "available_reason_ids": list(reasons),
+                }
+            ),
+        )
+        try:
+            selection = NamedTargetSynthesisSelection.model_validate_json(content)
+        except ValidationError as error:
+            raise ValueError("Groq returned an invalid named-target synthesis") from error
+        if selection.status is not report.status:
+            raise ValueError("Groq changed the named-target research status")
+        if len(set(selection.reason_ids)) != len(selection.reason_ids):
+            raise ValueError("Groq repeated a named-target synthesis reason")
+        unknown = set(selection.reason_ids) - set(reasons)
+        if unknown:
+            raise ValueError("Groq selected a reason absent from the named-target report")
+        selected = [reasons[reason_id] for reason_id in selection.reason_ids]
+        if "route" in reasons and "route" not in selection.reason_ids:
             selected.insert(0, reasons["route"])
         return " ".join(dict.fromkeys(selected))
 
