@@ -137,12 +137,8 @@ class PlayerEvidenceService:
             goals=observed("goals_scored", "season_totals.goals"),
             assists=observed("assists", "season_totals.assists"),
             bonus=observed("bonus", "season_totals.bonus"),
-            expected_goals=observed(
-                "expected_goals", "season_totals.expected_goals"
-            ),
-            expected_assists=observed(
-                "expected_assists", "season_totals.expected_assists"
-            ),
+            expected_goals=observed("expected_goals", "season_totals.expected_goals"),
+            expected_assists=observed("expected_assists", "season_totals.expected_assists"),
             source=bootstrap_source,
         )
 
@@ -201,8 +197,7 @@ class PlayerEvidenceService:
             rows = sorted(
                 by_gameweek[gameweek_id],
                 key=lambda row: (
-                    row.kickoff_time
-                    or datetime.min.replace(tzinfo=source.fetched_at.tzinfo),
+                    row.kickoff_time or datetime.min.replace(tzinfo=source.fetched_at.tzinfo),
                     row.fixture or 0,
                 ),
             )
@@ -296,9 +291,7 @@ class PlayerEvidenceService:
                 is_home = global_row.team_h == club_id
                 opponent = global_row.team_a if is_home else global_row.team_h
                 difficulty = (
-                    global_row.team_h_difficulty
-                    if is_home
-                    else global_row.team_a_difficulty
+                    global_row.team_h_difficulty if is_home else global_row.team_a_difficulty
                 )
                 gameweek_id = global_row.event
                 kickoff_time = global_row.kickoff_time
@@ -354,9 +347,7 @@ class PlayerEvidenceService:
         element_row: FplElementFixture,
     ) -> tuple[str, ...]:
         is_home = global_row.team_h == club_id
-        difficulty = (
-            global_row.team_h_difficulty if is_home else global_row.team_a_difficulty
-        )
+        difficulty = global_row.team_h_difficulty if is_home else global_row.team_a_difficulty
         mismatches = []
         if global_row.event != element_row.event:
             mismatches.append("Gameweek")
@@ -380,9 +371,7 @@ class PlayerEvidenceService:
         return sum(int(getattr(row, field)) for row in rows)
 
     @staticmethod
-    def _complete_float_sum(
-        rows: list[FplElementHistory], field: str
-    ) -> float | None:
+    def _complete_float_sum(rows: list[FplElementHistory], field: str) -> float | None:
         if not rows or any(field not in row.model_fields_set for row in rows):
             return None
         return round(sum(float(getattr(row, field)) for row in rows), 3)
@@ -403,7 +392,5 @@ class PlayerEvidenceService:
     def _unique_sources(sources: list[EvidenceSource]) -> tuple[EvidenceSource, ...]:
         unique: dict[tuple[str, datetime, datetime | None], EvidenceSource] = {}
         for source in sources:
-            unique.setdefault(
-                (source.endpoint, source.fetched_at, source.published_at), source
-            )
+            unique.setdefault((source.endpoint, source.fetched_at, source.published_at), source)
         return tuple(unique.values())

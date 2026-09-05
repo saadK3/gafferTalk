@@ -64,9 +64,7 @@ class SeasonTotalsEvidence(DomainModel):
     bonus: int | None = Field(default=None, ge=0)
     expected_goals: float | None = Field(default=None, ge=0)
     expected_assists: float | None = Field(default=None, ge=0)
-    expected_metrics_nature: Literal[EvidenceNature.MODEL_DERIVED] = (
-        EvidenceNature.MODEL_DERIVED
-    )
+    expected_metrics_nature: Literal[EvidenceNature.MODEL_DERIVED] = EvidenceNature.MODEL_DERIVED
     source: EvidenceSource
 
 
@@ -147,4 +145,3 @@ class PlayerEvidenceReport(DomainModel):
     players: tuple[PlayerEvidence, ...] = Field(min_length=1)
     sources: tuple[EvidenceSource, ...] = Field(min_length=1)
     assumptions: tuple[str, ...] = Field(min_length=1)
-

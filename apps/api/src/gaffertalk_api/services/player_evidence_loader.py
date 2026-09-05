@@ -51,4 +51,3 @@ class PlayerEvidenceLoader:
             summaries=summaries,
             generated_at=self._clock(),
         )
-

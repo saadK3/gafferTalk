@@ -194,9 +194,7 @@ def test_complete_report_groups_double_gameweek_and_labels_xg_xa() -> None:
     assert player.availability is EvidenceAvailability.OBSERVED
     assert player.missing_fields == ()
     assert player.current.news == "Knock - 75% chance of playing"
-    assert player.current.source.published_at == datetime(
-        2026, 9, 4, 16, 30, tzinfo=UTC
-    )
+    assert player.current.source.published_at == datetime(2026, 9, 4, 16, 30, tzinfo=UTC)
     assert player.recent_history is not None
     assert player.recent_history.included_gameweek_ids == (1, 2)
     assert player.recent_history.match_count == 3
