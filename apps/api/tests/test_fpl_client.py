@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,33 @@ async def test_global_responses_are_validated_and_cached() -> None:
     assert first_bootstrap is second_bootstrap
     assert first_fixtures == second_fixtures
     assert request_counts == {"bootstrap": 1, "fixtures": 1}
+
+
+@pytest.mark.anyio
+async def test_observation_preserves_original_fetch_time_when_cached() -> None:
+    now = datetime(2026, 9, 5, 12, tzinfo=UTC)
+    clock_value = now
+
+    def clock() -> datetime:
+        return clock_value
+
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, json=load_json("bootstrap-static.sample.json"))
+    )
+    async_client = httpx.AsyncClient(
+        base_url="https://example.test/api/",
+        transport=transport,
+    )
+    client = FplClient(client=async_client, max_attempts=1, clock=clock)
+    try:
+        first = await client.get_bootstrap_observation()
+        clock_value = now + timedelta(minutes=4)
+        second = await client.get_bootstrap_observation()
+    finally:
+        await async_client.aclose()
+
+    assert first is second
+    assert second.fetched_at == now
 
 
 @pytest.mark.anyio

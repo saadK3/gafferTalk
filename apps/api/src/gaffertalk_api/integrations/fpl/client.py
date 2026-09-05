@@ -1,5 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TypeVar
 
 import httpx
@@ -24,6 +26,16 @@ from gaffertalk_api.integrations.fpl.schemas import (
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 ResultT = TypeVar("ResultT")
+ObservationT = TypeVar("ObservationT")
+
+
+@dataclass(frozen=True, slots=True)
+class FplObservation[ObservationT]:
+    """A validated FPL response and the time it actually entered the local cache."""
+
+    value: ObservationT
+    fetched_at: datetime
+    endpoint: str
 
 
 class FplClient:
@@ -38,6 +50,7 @@ class FplClient:
         cache: AsyncTtlCache | None = None,
         client: httpx.AsyncClient | None = None,
         sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
@@ -49,6 +62,7 @@ class FplClient:
         self._cache = cache or AsyncTtlCache()
         self._max_attempts = max(1, max_attempts)
         self._sleeper = sleeper
+        self._clock = clock
 
     async def __aenter__(self) -> "FplClient":
         return self
@@ -61,7 +75,10 @@ class FplClient:
             await self._client.aclose()
 
     async def get_bootstrap(self) -> FplBootstrap:
-        return await self._cached_model(
+        return (await self.get_bootstrap_observation()).value
+
+    async def get_bootstrap_observation(self) -> FplObservation[FplBootstrap]:
+        return await self._cached_observation(
             key="bootstrap",
             path="bootstrap-static/",
             schema=FplBootstrap,
@@ -69,16 +86,28 @@ class FplClient:
         )
 
     async def get_fixtures(self) -> tuple[FplFixture, ...]:
+        return (await self.get_fixtures_observation()).value
+
+    async def get_fixtures_observation(
+        self,
+    ) -> FplObservation[tuple[FplFixture, ...]]:
         adapter = TypeAdapter(list[FplFixture])
-        fixtures = await self._cache.get_or_load(
+        return await self._cache.get_or_load(
             "fixtures",
             300,
-            lambda: self._get_and_validate("fixtures/", adapter.validate_python),
+            lambda: self._load_observation(
+                "fixtures/",
+                lambda payload: tuple(adapter.validate_python(payload)),
+            ),
         )
-        return tuple(fixtures)
 
     async def get_element_summary(self, player_id: int) -> FplElementSummary:
-        return await self._cached_model(
+        return (await self.get_element_summary_observation(player_id)).value
+
+    async def get_element_summary_observation(
+        self, player_id: int
+    ) -> FplObservation[FplElementSummary]:
+        return await self._cached_observation(
             key=f"element-summary:{player_id}",
             path=f"element-summary/{player_id}/",
             schema=FplElementSummary,
@@ -131,6 +160,28 @@ class FplClient:
             ttl_seconds,
             lambda: self._get_and_validate(path, schema.model_validate),
         )
+
+    async def _cached_observation(
+        self,
+        *,
+        key: str,
+        path: str,
+        schema: type[SchemaT],
+        ttl_seconds: float,
+    ) -> FplObservation[SchemaT]:
+        return await self._cache.get_or_load(
+            key,
+            ttl_seconds,
+            lambda: self._load_observation(path, schema.model_validate),
+        )
+
+    async def _load_observation(
+        self,
+        path: str,
+        validator: Callable[[object], ResultT],
+    ) -> FplObservation[ResultT]:
+        value = await self._get_and_validate(path, validator)
+        return FplObservation(value=value, fetched_at=self._clock(), endpoint=path)
 
     async def _get_and_validate(
         self,
