@@ -46,6 +46,7 @@ class FplElement(FplSchema):
     status: str = Field(min_length=1)
     chance_of_playing_next_round: int | None = Field(default=None, ge=0, le=100)
     news: str = ""
+    news_added: datetime | None = None
     total_points: int = 0
     minutes: int = Field(default=0, ge=0)
     starts: int = Field(default=0, ge=0)
@@ -146,6 +147,10 @@ class FplPicks(FplSchema):
 
 class FplElementHistory(FplSchema):
     round: int = Field(ge=1, le=38)
+    fixture: int | None = Field(default=None, gt=0)
+    opponent_team: int | None = Field(default=None, gt=0)
+    was_home: bool | None = None
+    kickoff_time: datetime | None = None
     total_points: int
     minutes: int = Field(ge=0)
     starts: int = Field(default=0, ge=0)
@@ -156,7 +161,18 @@ class FplElementHistory(FplSchema):
     expected_assists: float = Field(default=0, ge=0)
 
 
+class FplElementFixture(FplSchema):
+    id: int = Field(gt=0)
+    event: int | None = Field(default=None, ge=1, le=38)
+    kickoff_time: datetime | None = None
+    team_h: int = Field(gt=0)
+    team_a: int = Field(gt=0)
+    is_home: bool
+    difficulty: int = Field(ge=1, le=5)
+    finished: bool = False
+
+
 class FplElementSummary(FplSchema):
-    fixtures: list[dict[str, Any]]
+    fixtures: list[FplElementFixture]
     history: list[FplElementHistory]
     history_past: list[dict[str, Any]]
