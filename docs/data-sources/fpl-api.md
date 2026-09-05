@@ -171,6 +171,22 @@ Observed on 2026-09-02 after Gameweek 2 was marked both `finished` and
 - The cost fields are the prices recorded for that transfer. They do not expose
   the manager's authoritative current selling price for future moves.
 
+Observed at 2026-09-05T06:28:50Z, 12 hours 58 minutes 51 seconds after the
+Gameweek 3 deadline at 2026-09-04T17:30:00Z:
+
+- A new transient sample of 50 entries from the public overall standings
+  returned 1,256 Gameweek 3 transfers and 16 Gameweek 2 transfers. No entry
+  identifiers, names or raw payloads were printed or retained.
+- Gameweek 3 records exposed the same released fields as the sanitized fixture:
+  `element_in`, `element_in_cost`, `element_out`, `element_out_cost`, `entry`,
+  `event` and `time`. The existing contract fixture therefore remains valid.
+- This proves that transfer history was public by the observation time and puts
+  a privacy-safe upper bound of 12 hours 58 minutes 51 seconds on the observed
+  release latency. It does not identify the exact release minute because the
+  endpoint was not continuously polled.
+- The samples are independent snapshots of the then-current overall standings;
+  their Gameweek 2 counts are not a longitudinal cohort comparison.
+
 The following assumptions are intentionally **not** marked verified yet:
 
 - The exact release minute for picks relative to a deadline
@@ -178,9 +194,9 @@ The following assumptions are intentionally **not** marked verified yet:
 - Blank, double, or rescheduled Gameweek behavior
 
 The successful picks and released-transfer shapes are covered by sanitized
-contract fixtures. A pre-/post-Gameweek 3 observation is used to narrow the
-remaining transfer-release latency without retaining manager identity or an
-unsanitized response.
+contract fixtures. The pre-/post-Gameweek 3 observations narrow the known
+transfer-release latency without retaining manager identity or an unsanitized
+response.
 
 ## Caching, browser access, and throttling
 
