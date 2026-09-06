@@ -27,5 +27,19 @@
       "database_name": "gaffertalk-waitlist",
       "database_id": "2414d6b9-f30f-4d2a-a228-328ba5132fcc"
     }
-  ]
+  ],
+  "env": {
+    "staging": {
+      "name": "gaffertalk-web-staging",
+      "workers_dev": true,
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "gaffertalk-waitlist",
+          "database_id": "2414d6b9-f30f-4d2a-a228-328ba5132fcc"
+        }
+      ]
+    }
+  }
 }
