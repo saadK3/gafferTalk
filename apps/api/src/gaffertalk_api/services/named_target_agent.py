@@ -59,8 +59,14 @@ PROTECTED_TRIGGERS = (
     "not selling",
     "do not sell",
     "don't sell",
+    "don t sell",
     "keep",
+    "keeping",
+    "retain",
+    "retaining",
+    "preserve",
     "protect",
+    "protected",
 )
 
 
@@ -90,7 +96,11 @@ class NamedTargetAgentService:
         return bool(
             re.search(
                 r"\b(?:get|bring\s+in|buy|sign|replace|swap|afford|fund|funding|"
-                r"free\s+up|release\s+budget|raise\s+money|finance)\b",
+                r"free\s+up|release\s+budget|raise\s+money|finance)\b|"
+                r"\b(?:want|need|looking\s+to|trying\s+to)\s+(?:to\s+)?"
+                r"(?:get|bring\s+in|buy|sign)\b|"
+                r"\b(?:want|need)\s+[a-z0-9 .'-]{2,35}\s+"
+                r"(?:into|in|within|over|next)\b",
                 question,
                 re.IGNORECASE,
             )
@@ -230,6 +240,7 @@ class NamedTargetAgentService:
         target_question = re.split(
             r"\b(?:within|over|next)\s+(?:one|two|1|2)\s+(?:gameweeks?|gws?)\b"
             r"|\bwithout\s+(?:selling|sell)\b"
+            r"|\b(?:while\s+)?(?:keeping|keep|retain|retaining|preserve|protect)\b"
             r"|\bwith\s+(?:a\s+)?(?:maximum|max|up\s+to|no\s+more\s+than)\b",
             request.question,
             maxsplit=1,
@@ -314,7 +325,7 @@ class NamedTargetAgentService:
         for player in snapshot.picks:
             aliases = ConversationPreflightService._player_aliases(player.player)
             if any(
-                f"{trigger} {alias}" in normalized_question
+                f"{ConversationPreflightService._normalize(trigger)} {alias}" in normalized_question
                 for trigger in PROTECTED_TRIGGERS
                 for alias in aliases
             ):

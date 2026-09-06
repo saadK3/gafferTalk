@@ -36,6 +36,11 @@ TARGET_PATTERNS = (
         r"([a-z0-9 .'-]{2,35}?)(?:[?!,.]|$)"
     ),
     re.compile(r"\bwhat\s+about\s+([a-z0-9 .'-]{2,35}?)(?:[?!,.]|$)"),
+    re.compile(
+        r"\b(?:want|need|looking\s+to|trying\s+to)\s+(?:to\s+)?"
+        r"(?:get|bring\s+in|buy|sign)?\s*([a-z0-9 .'-]{2,35}?)"
+        r"(?:\s+(?:into|in|for|within|over|next|without|with)\b|[?!,.]|$)"
+    ),
 )
 
 
@@ -319,6 +324,10 @@ class ConversationPreflightService:
             aliases.add(full_name)
         if second_name:
             aliases.add(second_name)
+            surname = second_name.split()[-1]
+            first_name = cls._normalize(player.first_name)
+            if first_name and surname:
+                aliases.add(f"{first_name} {surname}")
         return aliases
 
     @staticmethod

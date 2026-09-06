@@ -8,6 +8,9 @@ from gaffertalk_api.domain.agent_research import (
     NamedTargetSynthesisSelection,
 )
 from gaffertalk_api.domain.conversation import TransferIntent
+from gaffertalk_api.domain.conversation_gateway import (
+    ConversationIntent,
+)
 from gaffertalk_api.domain.general_research import (
     GeneralResearchReport,
     GeneralSynthesisSelection,
@@ -73,6 +76,51 @@ class GroqConversationClient:
         if intent.outgoing_player_id != selected_outgoing_id:
             raise ValueError("Groq did not preserve the selected outgoing player")
         return intent
+
+    async def interpret_general_question(
+        self,
+        question: str,
+        *,
+        squad: tuple[Player, ...],
+        history: tuple[dict[str, object], ...] = (),
+    ) -> ConversationIntent:
+        """Extract a bounded research intent without making a football decision."""
+
+        roster = [
+            {"id": player.id, "name": player.web_name, "position": player.position.value}
+            for player in squad
+        ]
+        content = await self._completion(
+            system=(
+                "You are the GafferTalk conversation interpreter. Understand one FPL manager "
+                "message and return JSON only matching the ConversationIntent schema. Choose "
+                "exactly one capability from named_target_transfer, historical_alternatives, "
+                "budget_release, hold_or_transfer, squad_concerns or unsupported. Extract only "
+                "constraints explicitly stated by the manager. Use target_player_name and "
+                "protected_player_names as names, never IDs. Use the exact roster spelling when "
+                "a player is in the roster. A route question spanning multiple Gameweeks must "
+                "ask for a horizon or use the explicitly stated horizon; a request that depends "
+                "on an unstated hit limit must ask one concise clarification question instead of "
+                "silently inventing a limit. Use needs_clarification only when required "
+                "information "
+                "is genuinely missing. Map natural phrases such as roll, bank, hold and save the "
+                "transfer to hold_or_transfer. Map free up money, release funds and afford to "
+                "budget_release. If the question is outside the supported FPL research scope, use "
+                "unsupported. Do not recommend a player, call a tool, forecast points or include "
+                "facts. The explanation should briefly state what you understood."
+            ),
+            user=json.dumps(
+                {
+                    "question": question,
+                    "team_roster": roster,
+                    "recent_conversation": list(history[-4:]),
+                }
+            ),
+        )
+        try:
+            return ConversationIntent.model_validate_json(content)
+        except ValidationError as error:
+            raise ValueError("Groq returned an invalid general research intent") from error
 
     async def explain(self, question: str, result: RecommendationResult) -> str:
         facts = {
@@ -291,7 +339,15 @@ class GroqConversationClient:
         if unknown:
             raise ValueError("Groq selected a reason absent from the general research report")
         selected = [reasons[reason_id] for reason_id in selection.reason_ids]
-        return " ".join(dict.fromkeys(selected))
+        parts = [report.recommended_action]
+        parts.extend(selected)
+        if report.alternatives:
+            alternatives = "; ".join(
+                f"Alternative {alternative.rank}: {alternative.action}"
+                for alternative in report.alternatives
+            )
+            parts.append(alternatives)
+        return " ".join(dict.fromkeys(part for part in parts if part))
 
     async def _completion(self, *, system: str, user: str, json_mode: bool = True) -> str:
         payload: dict[str, object] = {
