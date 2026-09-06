@@ -7,6 +7,7 @@ from gaffertalk_api.domain.general_research import (
     ResearchCapability,
 )
 from gaffertalk_api.domain.models import DomainModel
+from gaffertalk_api.domain.multi_gameweek_planning import SellingPriceBasis
 from gaffertalk_api.domain.pro_research import RiskPreference
 from gaffertalk_api.domain.recommendation_requests import CurrentSquadInput
 
@@ -68,15 +69,17 @@ class ConversationTurnRequest(DomainModel):
     @model_validator(mode="after")
     def state_references_are_valid(self) -> "ConversationTurnRequest":
         squad_ids = set(self.squad.player_ids) if self.squad is not None else set()
-        if self.squad is None and self.selling_prices_tenths:
+        if self.squad is None and self.selling_prices_tenths and self.conversation_id is None:
             raise ValueError("selling prices require a confirmed squad")
-        if not set(self.selling_prices_tenths).issubset(squad_ids):
+        if self.squad is not None and not set(self.selling_prices_tenths).issubset(squad_ids):
             raise ValueError("selling prices may only reference players in the confirmed squad")
         if any(price < 0 or price > 300 for price in self.selling_prices_tenths.values()):
             raise ValueError("every selling price must be between £0.0m and £30.0m")
         if len(set(self.protected_player_ids)) != len(self.protected_player_ids):
             raise ValueError("protected players must be unique")
-        if not set(self.protected_player_ids).issubset(squad_ids):
+        if self.squad is None and self.protected_player_ids and self.conversation_id is None:
+            raise ValueError("protected players require a confirmed squad")
+        if self.squad is not None and not set(self.protected_player_ids).issubset(squad_ids):
             raise ValueError("protected players must belong to the confirmed squad")
         return self
 
@@ -85,6 +88,16 @@ class ConversationTurnRecord(DomainModel):
     question: str = Field(min_length=1, max_length=500)
     intent: ConversationIntent
     response_status: ConversationResponseStatus
+
+
+class SellingPriceRequest(DomainModel):
+    """A price the manager must confirm before a route can be treated as exact."""
+
+    player_id: int = Field(gt=0)
+    player_name: str = Field(min_length=1)
+    current_fpl_price_tenths: int = Field(ge=0, le=300)
+    reference_price_basis: SellingPriceBasis = SellingPriceBasis.CURRENT_PRICE_UPPER_BOUND
+    reason: str = Field(min_length=1, max_length=300)
 
 
 class ConversationResponse(DomainModel):
@@ -96,6 +109,7 @@ class ConversationResponse(DomainModel):
     intent: ConversationIntent
     assistant_message: str = Field(min_length=1)
     research: GeneralResearchResponse | None = None
+    selling_price_requests: tuple[SellingPriceRequest, ...] = Field(default=(), max_length=2)
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
 

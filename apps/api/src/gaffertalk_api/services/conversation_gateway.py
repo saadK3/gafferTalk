@@ -16,6 +16,7 @@ from gaffertalk_api.domain.conversation_gateway import (
     ConversationResponseStatus,
     ConversationTurnRecord,
     ConversationTurnRequest,
+    SellingPriceRequest,
 )
 from gaffertalk_api.domain.general_research import (
     GeneralResearchReport,
@@ -265,6 +266,7 @@ class ConversationGateway:
             request.question,
             report,
         )
+        selling_price_requests = self._selling_price_requests(report, squad_players)
         response = ConversationResponse(
             conversation_id=conversation_id,
             question=request.question,
@@ -272,6 +274,7 @@ class ConversationGateway:
             intent=intent,
             assistant_message=message,
             research=nested,
+            selling_price_requests=selling_price_requests,
             provider=provider,
             model=model,
         )
@@ -285,6 +288,57 @@ class ConversationGateway:
             )
         )
         return response
+
+    @staticmethod
+    def _selling_price_requests(
+        report: GeneralResearchReport,
+        squad_players: tuple[Player, ...],
+    ) -> tuple[SellingPriceRequest, ...]:
+        """Expose missing prices as data the client can render without parsing prose."""
+
+        requested: dict[int, str] = {}
+        if report.route_report is not None:
+            for player_id in report.route_report.requested_selling_price_player_ids:
+                requested[player_id] = (
+                    "Confirm this player's actual selling price to validate the proposed route."
+                )
+        if (
+            report.squad_action_report is not None
+            and report.squad_action_report.requested_selling_price_for is not None
+        ):
+            requested_player = report.squad_action_report.requested_selling_price_for
+            requested[requested_player.id] = (
+                "Confirm this player's actual selling price to validate the leading squad action."
+            )
+
+        players_by_id = {player.id: player for player in squad_players}
+        if report.route_report is not None:
+            routes = (
+                report.route_report.primary_route,
+                *report.route_report.alternatives,
+            )
+            for route in routes:
+                if route is None:
+                    continue
+                for step in route.steps:
+                    for transfer in step.transfers:
+                        players_by_id.setdefault(transfer.outgoing.id, transfer.outgoing)
+        requests: list[SellingPriceRequest] = []
+        for player_id in sorted(requested):
+            matched_player = players_by_id.get(player_id)
+            if matched_player is None:
+                raise ValueError(
+                    f"research report requested an unknown selling-price player: {player_id}"
+                )
+            requests.append(
+                SellingPriceRequest(
+                    player_id=matched_player.id,
+                    player_name=matched_player.web_name,
+                    current_fpl_price_tenths=matched_player.current_price.tenths,
+                    reason=requested[player_id],
+                )
+            )
+        return tuple(requests)
 
     async def _squad_players(self, squad: CurrentSquadInput | None) -> tuple[Player, ...]:
         if squad is None:

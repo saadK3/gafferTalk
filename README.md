@@ -137,7 +137,10 @@ python -m gaffertalk_api.cli research-suite 3906635 --assume-current-prices
 
 The price assumption is explicit and is intended for local testing only. See the
 [conversational research gateway](docs/architecture/conversational-research-gateway.md)
-for the contract and boundaries.
+for the contract and boundaries. When an exact route needs a manager's selling price, the
+conversation response returns a structured `selling_price_requests` array containing the player,
+the current FPL price as an upper-bound reference and the reason for the request. The client can
+render a price form without parsing the assistant message.
 
 Whole-squad advice is available at `http://localhost:3000/pro/squad-action`.
 A manager can ask for the best current action without entering all 15 selling

@@ -261,6 +261,85 @@ async def test_gateway_recovers_explicit_name_and_hit_from_original_question() -
 
 
 @pytest.mark.anyio
+async def test_gateway_exposes_structured_route_selling_price_requests() -> None:
+    client = _client()
+    source = _request(question="get Player 100")
+    try:
+        gateway = ConversationGateway(
+            GeneralResearchAgent(client, clock=lambda: NOW),
+            PlayerCatalogueLoader(client),
+            clock=lambda: NOW,
+        )
+        response = await gateway.handle(
+            ConversationTurnRequest(
+                conversation_id="route-price-request",
+                question=(
+                    "Can I get Player 100 within two gameweeks with a maximum hit of minus eight?"
+                ),
+                squad=source.squad,
+            )
+        )
+        assert response.research is not None
+        assert response.research.report.route_report is not None
+        requested_ids = response.research.report.route_report.requested_selling_price_player_ids
+        request = response.selling_price_requests[0]
+        confirmed = await gateway.handle(
+            ConversationTurnRequest(
+                conversation_id="route-price-request",
+                question=(
+                    "Can I get Player 100 within two gameweeks with a maximum hit of minus eight?"
+                ),
+                selling_prices_tenths={request.player_id: request.current_fpl_price_tenths},
+            )
+        )
+    finally:
+        await client.aclose()
+
+    assert response.research is not None
+    assert response.research.report.route_report is not None
+    assert requested_ids
+    assert len(response.selling_price_requests) == len(requested_ids)
+    assert request.player_id == requested_ids[0]
+    assert request.player_name
+    assert request.current_fpl_price_tenths > 0
+    assert request.reference_price_basis.value == "current_price_upper_bound"
+    assert "actual selling price" in request.reason
+    assert confirmed.research is not None
+    assert confirmed.selling_price_requests == ()
+
+
+@pytest.mark.anyio
+async def test_gateway_exposes_structured_squad_action_price_request() -> None:
+    client = _client()
+    source = _request(question="get Player 100")
+    try:
+        gateway = ConversationGateway(
+            GeneralResearchAgent(client, clock=lambda: NOW),
+            PlayerCatalogueLoader(client),
+            clock=lambda: NOW,
+        )
+        response = await gateway.handle(
+            ConversationTurnRequest(
+                conversation_id="squad-action-price-request",
+                question="Should I roll or make a transfer this week?",
+                squad=source.squad,
+            )
+        )
+    finally:
+        await client.aclose()
+
+    assert response.research is not None
+    squad_report = response.research.report.squad_action_report
+    assert squad_report is not None
+    assert squad_report.requested_selling_price_for is not None
+    assert len(response.selling_price_requests) == 1
+    request = response.selling_price_requests[0]
+    assert request.player_id == squad_report.requested_selling_price_for.id
+    assert request.player_name == squad_report.requested_selling_price_for.web_name
+    assert "leading squad action" in request.reason
+
+
+@pytest.mark.anyio
 async def test_gateway_resolves_protected_player_names_from_team_context() -> None:
     client = _client()
     source = _request(question="get Player 100")
@@ -366,6 +445,47 @@ async def test_conversation_endpoint_returns_intent_and_research_response() -> N
     assert body["intent"]["capability"] == "hold_or_transfer"
     assert body["status"] == "answered"
     assert body["research"]["report"]["capability"] == "hold_or_transfer"
+    assert body["selling_price_requests"] == []
+
+
+@pytest.mark.anyio
+async def test_conversation_endpoint_returns_structured_selling_price_requests() -> None:
+    client = _client()
+    source = _request(question="get Player 100")
+    gateway = ConversationGateway(
+        GeneralResearchAgent(client, clock=lambda: NOW),
+        PlayerCatalogueLoader(client),
+        clock=lambda: NOW,
+    )
+    app.dependency_overrides[get_conversation_gateway] = lambda: gateway
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http_client:
+            response = await http_client.post(
+                "/v1/agent/conversation",
+                json={
+                    "conversation_id": "endpoint-price-request",
+                    "question": (
+                        "Can I get Player 100 within two gameweeks with a maximum hit of "
+                        "minus eight?"
+                    ),
+                    "squad": source.squad.model_dump(mode="json"),
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+        await client.aclose()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["selling_price_requests"]) == 1
+    request = body["selling_price_requests"][0]
+    assert request["player_id"] > 0
+    assert request["player_name"]
+    assert request["current_fpl_price_tenths"] > 0
+    assert request["reference_price_basis"] == "current_price_upper_bound"
+    assert "actual selling price" in request["reason"]
 
 
 def test_intent_validation_requires_question_for_clarification() -> None:
