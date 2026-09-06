@@ -124,6 +124,21 @@ deterministic categorical confidence. Groq may select only backend-approved
 reason IDs; it cannot add facts or change the verdict. See the
 [Pro named-transfer architecture](docs/architecture/pro-named-transfer-research.md).
 
+The natural-language research gateway is available from the local API at
+`POST /v1/agent/conversation`. It understands varied wording, asks for missing
+manager context, keeps a short conversation history and then delegates to the
+same deterministic research capabilities. Groq interprets the turn and may
+explain the grounded report; it cannot change the capability result. The local
+acceptance suite runs five representative questions against a public team:
+
+```bash
+python -m gaffertalk_api.cli research-suite 3906635 --assume-current-prices
+```
+
+The price assumption is explicit and is intended for local testing only. See the
+[conversational research gateway](docs/architecture/conversational-research-gateway.md)
+for the contract and boundaries.
+
 Whole-squad advice is available at `http://localhost:3000/pro/squad-action`.
 A manager can ask for the best current action without entering all 15 selling
 prices. GafferTalk requests only a relevant outgoing player's price when needed

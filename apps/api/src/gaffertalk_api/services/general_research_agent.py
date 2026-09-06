@@ -58,6 +58,9 @@ HOLD_WORDS = (
     "retain",
     "preserve",
     "wait",
+    "roll",
+    "bank",
+    "save",
     "sell",
     "transfer out",
     "move out",
@@ -124,10 +127,10 @@ class GeneralResearchAgent:
             or re.search(r"\b(?:budget|money)\b.*\b(?:for|to|need|afford)\b", normalized)
         ):
             return ResearchCapability.BUDGET_RELEASE
-        if GeneralResearchAgent._contains_any(normalized, HOLD_WORDS):
-            return ResearchCapability.HOLD_OR_TRANSFER
         if NamedTargetAgentService.has_named_target_intent(question):
             return ResearchCapability.NAMED_TARGET_TRANSFER
+        if GeneralResearchAgent._contains_any(normalized, HOLD_WORDS):
+            return ResearchCapability.HOLD_OR_TRANSFER
         if GeneralResearchAgent._contains_any(normalized, POSITION_WORDS) and (
             GeneralResearchAgent._contains_any(
                 normalized, ("best", "which", "who", "points", "minutes")
@@ -235,7 +238,10 @@ class GeneralResearchAgent:
                     ResearchAlternative(
                         rank=rank,
                         player=route.target,
-                        action=f"Use alternative route {rank}.",
+                        action=(
+                            f"Reach {route.target.web_name} by Gameweek "
+                            f"{route.target_arrival_gameweek_id}: {transfers or 'roll only'}."
+                        ),
                         reason=(
                             f"Arrives in Gameweek {route.target_arrival_gameweek_id}, uses "
                             f"{route.total_transfers} transfer(s), costs {route.total_points_hit} "

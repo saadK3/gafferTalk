@@ -15,6 +15,10 @@ from gaffertalk_api.domain.agent_research import (
     NamedTargetResearchResponse,
     NamedTargetResearchStatus,
 )
+from gaffertalk_api.domain.conversation_gateway import (
+    ConversationResponse,
+    ConversationTurnRequest,
+)
 from gaffertalk_api.domain.errors import (
     InvalidTeamIdError,
     InvalidUpstreamFplResponseError,
@@ -63,6 +67,7 @@ from gaffertalk_api.domain.recommendations import RecommendationResult
 from gaffertalk_api.domain.route_research import RouteResearchResponse
 from gaffertalk_api.integrations.fpl.client import FplClient
 from gaffertalk_api.integrations.llm.groq import GroqConversationClient
+from gaffertalk_api.services.conversation_gateway import ConversationGateway
 from gaffertalk_api.services.conversation_preflight import ConversationPreflightService
 from gaffertalk_api.services.free_question_usage import (
     FreeQuestionLimitExceededError,
@@ -149,6 +154,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         if settings.groq_api_key
         else None
     )
+    application.state.conversation_gateway = ConversationGateway(
+        application.state.general_research_agent,
+        application.state.player_catalogue,
+        interpreter=application.state.groq_client,
+    )
     try:
         yield
     finally:
@@ -209,6 +219,10 @@ def get_named_target_agent_loader(request: Request) -> NamedTargetAgentLoader:
 
 def get_general_research_agent(request: Request) -> GeneralResearchAgent:
     return request.app.state.general_research_agent
+
+
+def get_conversation_gateway(request: Request) -> ConversationGateway:
+    return request.app.state.conversation_gateway
 
 
 def get_pro_plan_loader(request: Request) -> ProPlanLoader:
@@ -590,6 +604,33 @@ async def research_general_agent(
         provider="groq",
         model=groq.model,
     )
+
+
+@app.post(
+    "/v1/agent/conversation",
+    response_model=ConversationResponse,
+    tags=["Research agent"],
+)
+async def research_conversation(
+    request: ConversationTurnRequest,
+    gateway: Annotated[ConversationGateway, Depends(get_conversation_gateway)],
+) -> ConversationResponse:
+    """Understand one natural-language turn and continue its short-lived context."""
+
+    try:
+        return await gateway.handle(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_conversation_state", "message": str(error)},
+        ) from error
+    except (
+        InvalidUpstreamFplResponseError,
+        UpstreamFplNotFoundError,
+        UpstreamFplTimeoutError,
+        UpstreamFplUnavailableError,
+    ) as error:
+        raise upstream_http_exception(error) from error
 
 
 @app.get(

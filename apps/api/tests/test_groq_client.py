@@ -10,6 +10,7 @@ from gaffertalk_api.domain.agent_research import (
     NamedTargetResearchReport,
     NamedTargetResearchStatus,
 )
+from gaffertalk_api.domain.conversation_gateway import ConversationIntentStatus
 from gaffertalk_api.domain.general_research import (
     GeneralResearchReport,
     GeneralResearchStatus,
@@ -468,7 +469,10 @@ async def test_general_synthesis_can_only_select_validated_reason_ids() -> None:
     finally:
         await http_client.aclose()
 
-    assert answer == "Palmer has the closest historical output in the compared set."
+    assert answer == (
+        "Use Palmer as the leading historical alternative. "
+        "Palmer has the closest historical output in the compared set."
+    )
 
 
 @pytest.mark.anyio
@@ -504,6 +508,99 @@ async def test_general_synthesis_rejects_changed_or_invented_results(
             await client.synthesize_general_report(
                 "Which midfielders have similar output?", general_report()
             )
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_general_interpreter_extracts_natural_fpl_intent() -> None:
+    player = Player(
+        id=12,
+        web_name="Bruno",
+        club=Club(id=1, name="Example", short_name="EXA"),
+        position=Position.MIDFIELDER,
+        current_price=Money(tenths=120),
+        status="a",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["response_format"] == {"type": "json_object"}
+        supplied = json.loads(body["messages"][1]["content"])
+        assert supplied["team_roster"] == [{"id": 12, "name": "Bruno", "position": "MID"}]
+        assert supplied["recent_conversation"] == []
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "capability": "hold_or_transfer",
+                                    "status": "ready",
+                                    "target_player_name": None,
+                                    "horizon_gameweeks": None,
+                                    "maximum_points_hit": None,
+                                    "protected_player_names": ["Bruno"],
+                                    "risk_preference": "balanced",
+                                    "objective": "avoid an unnecessary hit",
+                                    "missing_information": [],
+                                    "clarification_question": None,
+                                    "explanation": (
+                                        "The manager is deciding whether to roll the transfer."
+                                    ),
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        intent = await client.interpret_general_question(
+            "Should I roll or transfer?", squad=(player,)
+        )
+    finally:
+        await http_client.aclose()
+
+    assert intent.status is ConversationIntentStatus.READY
+    assert intent.capability.value == "hold_or_transfer"
+    assert intent.protected_player_names == ("Bruno",)
+
+
+@pytest.mark.anyio
+async def test_general_interpreter_rejects_invalid_intent_json() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps({"capability": "unknown"})}}]},
+        )
+
+    http_client = httpx.AsyncClient(
+        base_url="https://groq.test/openai/v1/", transport=httpx.MockTransport(handler)
+    )
+    client = GroqConversationClient(
+        api_key="test-key",
+        model="test-model",
+        base_url="https://groq.test/openai/v1/",
+        timeout_seconds=1,
+        client=http_client,
+    )
+    try:
+        with pytest.raises(ValueError, match="invalid general research intent"):
+            await client.interpret_general_question("What should I do?", squad=())
     finally:
         await http_client.aclose()
 

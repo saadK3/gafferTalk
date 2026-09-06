@@ -1,4 +1,4 @@
-.PHONY: install dev-api dev-web lookup-team recommend-one supabase-start supabase-stop supabase-reset lint test typecheck check
+.PHONY: install dev-api dev-web lookup-team recommend-one research-suite supabase-start supabase-stop supabase-reset lint test typecheck check
 
 PYTHON ?= python3
 PNPM ?= pnpm
@@ -19,6 +19,10 @@ lookup-team:
 
 recommend-one:
 	$(PYTHON) -m gaffertalk_api.cli recommend-one --out "$(or $(OUT),Yates)"
+
+research-suite:
+	@test -n "$(TEAM_ID)" || (echo "Usage: make research-suite TEAM_ID=1234567" && exit 2)
+	$(PYTHON) -m gaffertalk_api.cli research-suite $(TEAM_ID) --assume-current-prices
 
 supabase-start:
 	$(PNPM) exec supabase start
