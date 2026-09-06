@@ -178,6 +178,122 @@ export type ConversationResponse = {
   quota: FreeQuestionQuota;
 };
 
+export type ResearchCapability =
+  | "named_target_transfer"
+  | "historical_alternatives"
+  | "budget_release"
+  | "hold_or_transfer"
+  | "squad_concerns"
+  | "unsupported";
+
+export type ResearchIntent = {
+  capability: ResearchCapability;
+  status: "ready" | "needs_clarification" | "unsupported";
+  target_player_name: string | null;
+  horizon_gameweeks: number | null;
+  maximum_points_hit: number | null;
+  protected_player_names: string[];
+  risk_preference: RiskPreference;
+  objective: string | null;
+  missing_information: string[];
+  clarification_question: string | null;
+  explanation: string;
+};
+
+export type ResearchFact = {
+  subject: string;
+  label: string;
+  value: string;
+  nature: "observed" | "model_derived" | "calculated";
+  source: string;
+};
+
+export type ResearchCalculation = {
+  label: string;
+  value: string;
+  formula: string;
+};
+
+export type ResearchAlternative = {
+  rank: number;
+  player: ApiPlayer | null;
+  action: string;
+  reason: string;
+  facts: ResearchFact[];
+};
+
+export type ResearchReport = {
+  schema_version: "1.0";
+  question: string;
+  capability: ResearchCapability;
+  status:
+    | "recommendation"
+    | "information"
+    | "needs_clarification"
+    | "needs_selling_prices"
+    | "no_route"
+    | "unsupported";
+  subject: ApiPlayer | null;
+  recommended_action: string;
+  alternatives: ResearchAlternative[];
+  facts: ResearchFact[];
+  calculations: ResearchCalculation[];
+  opinion: string;
+  strongest_objection: string;
+  change_conditions: string[];
+  clarification_question: string | null;
+  grounded_reasons: Array<{ id: string; text: string }>;
+  assumptions: string[];
+  evidence: unknown;
+  named_target_report: unknown;
+  route_report: unknown;
+  squad_action_report: unknown;
+  metadata: Record<string, unknown>;
+};
+
+export type ResearchSellingPriceRequest = {
+  player_id: number;
+  player_name: string;
+  current_fpl_price_tenths: number;
+  reference_price_basis: "current_price_upper_bound";
+  reason: string;
+};
+
+export type ResearchConversationRequest = {
+  conversation_id?: string;
+  question: string;
+  squad?: CurrentSquadRequest;
+  selling_prices_tenths?: Record<number, number>;
+  risk_preference?: RiskPreference;
+  horizon_gameweeks?: 1 | 2;
+  maximum_points_hit?: number;
+  protected_player_ids?: number[];
+};
+
+export type ResearchConversationResponse = {
+  conversation_id: string;
+  question: string;
+  status: "answered" | "needs_clarification" | "unsupported";
+  intent: ResearchIntent;
+  assistant_message: string;
+  research: {
+    report: ResearchReport;
+    assistant_message: string;
+    provider: string;
+    model: string;
+  } | null;
+  selling_price_requests: ResearchSellingPriceRequest[];
+  provider: string;
+  model: string;
+};
+
+export function researchConversation(
+  input: ResearchConversationRequest,
+  signal?: AbortSignal,
+): Promise<ResearchConversationResponse> {
+  return post("/v1/agent/conversation", input, signal);
+}
+
 export function loadDemoSquad(signal?: AbortSignal): Promise<DemoSquad> {
   return request<DemoSquad>("/v1/demo/squad", signal);
 }

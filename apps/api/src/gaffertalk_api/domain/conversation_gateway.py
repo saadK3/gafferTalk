@@ -109,7 +109,7 @@ class ConversationResponse(DomainModel):
     intent: ConversationIntent
     assistant_message: str = Field(min_length=1)
     research: GeneralResearchResponse | None = None
-    selling_price_requests: tuple[SellingPriceRequest, ...] = Field(default=(), max_length=2)
+    selling_price_requests: tuple[SellingPriceRequest, ...] = Field(default=(), max_length=15)
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
 

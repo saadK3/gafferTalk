@@ -207,7 +207,7 @@ function Lookup({ onLoaded }: { onLoaded: (team: LoadedTeam) => void }) {
   );
 }
 
-export function ConfirmTeamFlow() {
+export function ConfirmTeamFlow({ readyPath = "/recommend" }: { readyPath?: "/recommend" | "/research" }) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("lookup");
   const [loadedTeam, setLoadedTeam] = useState<LoadedTeam | null>(null);
@@ -369,7 +369,7 @@ export function ConfirmTeamFlow() {
         <section className={styles.readyStage}>
           <span className={styles.readyTick}>✓</span><p className={styles.eyebrow}><span>Team ready</span> Trusted planning state</p><h1>You’re ready<br />to make the call.</h1><p className={styles.lede}>GafferTalk now has your current 15-player squad, <strong>£{Number(bank).toFixed(1)}m</strong> in the bank and <strong>{freeTransfers}</strong> free transfer{freeTransfers === "1" ? "" : "s"}.</p>
           <div className={styles.provenanceGrid}><article><span>From public FPL data</span><strong>{snapshot?.gameweek.name} squad snapshot</strong><p>Players, clubs, positions and deadline context.</p></article><article><span>Confirmed by you</span><strong>{changes.length} squad change{changes.length === 1 ? "" : "s"}</strong><p>Current bank, captaincy and free-transfer count.</p></article></div>
-          <div className={styles.readyActions}><button className={styles.primaryAction} type="button" onClick={() => router.push("/recommend")}>Continue to GafferTalk</button><button className={styles.textButton} type="button" onClick={() => setStage("confirm")}>Edit current team</button></div>
+          <div className={styles.readyActions}><button className={styles.primaryAction} type="button" onClick={() => router.push(readyPath)}>{readyPath === "/research" ? "Open research assistant" : "Continue to GafferTalk"}</button><button className={styles.textButton} type="button" onClick={() => setStage("confirm")}>Edit current team</button></div>
           <p className={styles.prototypeNote}>Your confirmed state is saved on this device. The assistant screen comes next.</p>
         </section>
       ) : null}
